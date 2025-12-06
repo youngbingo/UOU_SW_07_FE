@@ -451,7 +451,6 @@ const CalendarPage = () => {
       <Section>
         {view === 'calendar' ? (
           <>
-            <Title>10월 일정</Title>
             <StyledCalendarWrapper>
               <Calendar 
                 onChange={onChange} 
