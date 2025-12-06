@@ -4,7 +4,7 @@ import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 import { useNavigate } from 'react-router-dom';
 import { format, addDays, startOfWeek } from 'date-fns';
-import { FaPlus, FaList, FaCalendarAlt } from 'react-icons/fa';
+import { FaPlus, FaList, FaCalendarAlt, FaChevronRight } from 'react-icons/fa';
 
 const PageContainer = styled.div`
   display: flex;
@@ -29,7 +29,7 @@ const ToggleBtn = styled.button`
   background: ${({ $active, theme }) => ($active ? theme.colors.primary : 'transparent')};
   color: ${({ $active, theme }) => ($active ? 'white' : theme.colors.textSecondary)};
   padding: 8px 16px;
-  border-radius: ${({ theme }) => theme.borderRadius.small};
+  border-radius: ${({ theme }) => theme.borderRadius.medium};
   font-size: ${({ theme }) => theme.fontSizes.small};
   font-weight: bold;
   display: flex;
@@ -53,6 +53,32 @@ const Title = styled.h2`
   font-size: ${({ theme }) => theme.fontSizes.large};
   margin-bottom: ${({ theme }) => theme.spacing.medium};
   color: ${({ theme }) => theme.colors.text};
+  display: flex;
+  align-items: center;
+  gap: 8px;
+`;
+
+const DummyBadge = styled.span`
+  font-size: 12px;
+  background-color: #eee;
+  color: #888;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: normal;
+`;
+
+const MoreLink = styled.span`
+  font-size: 14px;
+  color: ${({ theme }) => theme.colors.primary};
+  margin-left: auto;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+
+  &:hover {
+    text-decoration: underline;
+  }
 `;
 
 // 캘린더 스타일 오버라이드
@@ -114,6 +140,11 @@ const ClassCell = styled(GridCell)`
   border-left: 3px solid ${({ theme, color }) => color || theme.colors.primary};
   flex-direction: column;
   gap: 4px;
+  cursor: pointer;
+
+  &:hover {
+    opacity: 0.8;
+  }
 `;
 
 const FloatingButton = styled.button`
@@ -152,6 +183,8 @@ const NoteItem = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
+  transition: background-color 0.2s;
+  position: relative;
 
   &:hover {
     background-color: ${({ theme }) => theme.colors.gray};
@@ -164,12 +197,19 @@ const CalendarPage = () => {
   const navigate = useNavigate();
 
   const handleDateClick = (date) => {
-    const dateStr = format(date, 'yyyy-MM-dd');
+    const dateStr = typeof date === 'string' ? date : format(date, 'yyyy-MM-dd');
     navigate(`/note/${dateStr}`);
   };
 
   const days = ['시간', '월', '화', '수', '목', '금'];
   const times = ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00'];
+
+  // 더미 노트 데이터
+  const recentNotes = [
+    { id: 1, title: '알고리즘 3주차 정리', date: '2025-10-06', tag: '전공필수', time: '방금 전' },
+    { id: 2, title: '팀 프로젝트 아이디어 회의', date: '2025-10-05', tag: '캡스톤디자인', time: '어제' },
+    { id: 3, title: '데이터베이스 모델링 실습', date: '2025-10-03', tag: '데이터베이스', time: '3일 전' },
+  ];
 
   return (
     <PageContainer>
@@ -197,20 +237,28 @@ const CalendarPage = () => {
           </>
         ) : (
           <>
-            <Title>이번 주 시간표</Title>
+            <Title>
+              이번 주 시간표 <DummyBadge>DUMMY</DummyBadge>
+            </Title>
             <TimeTableGrid>
               {days.map((day) => <HeaderCell key={day}>{day}</HeaderCell>)}
               {times.map((time, i) => (
                 <React.Fragment key={time}>
-                  <GridCell>{time}</GridCell> {/* 시간 표시 */}
-                  {/* 월~금 데이터 (더미) */}
+                  <GridCell>{time}</GridCell>
                   {[0, 1, 2, 3, 4].map((dayIdx) => {
-                    // 예시: 월요일 10시, 수요일 13시에 수업
                     if (dayIdx === 0 && i === 1) {
-                      return <ClassCell key={dayIdx} color="#E74C3C">알고리즘<br/>(302호)</ClassCell>;
+                      return (
+                        <ClassCell key={dayIdx} color="#E74C3C" onClick={() => handleDateClick('2025-10-06')}>
+                          알고리즘<br/>(302호)
+                        </ClassCell>
+                      );
                     }
                     if (dayIdx === 2 && i === 4) {
-                      return <ClassCell key={dayIdx} color="#F5A623">데이터베이스<br/>(205호)</ClassCell>;
+                      return (
+                        <ClassCell key={dayIdx} color="#F5A623" onClick={() => handleDateClick('2025-10-08')}>
+                          데이터베이스<br/>(205호)
+                        </ClassCell>
+                      );
                     }
                     return <GridCell key={dayIdx} />;
                   })}
@@ -222,21 +270,25 @@ const CalendarPage = () => {
       </Section>
 
       <Section>
-        <Title>최근 작성한 노트</Title>
-        <NoteItem onClick={() => handleDateClick(new Date())}>
-          <div>
-            <h4 style={{ marginBottom: '4px' }}>알고리즘 3주차 정리</h4>
-            <span style={{ fontSize: '12px', color: '#666' }}>2025-10-06 | 전공필수</span>
-          </div>
-          <span style={{ fontSize: '12px', color: '#999' }}>방금 전</span>
-        </NoteItem>
-        <NoteItem onClick={() => handleDateClick(new Date())}>
-           <div>
-            <h4 style={{ marginBottom: '4px' }}>팀 프로젝트 아이디어 회의</h4>
-            <span style={{ fontSize: '12px', color: '#666' }}>2025-10-05 | 캡스톤디자인</span>
-          </div>
-          <span style={{ fontSize: '12px', color: '#999' }}>어제</span>
-        </NoteItem>
+        <Title>
+          최근 작성한 노트 <DummyBadge>DUMMY</DummyBadge>
+          <MoreLink onClick={() => navigate('/notes')}>
+            더보기 <FaChevronRight size={12} />
+          </MoreLink>
+        </Title>
+        {recentNotes.map((note) => (
+          <NoteItem key={note.id} onClick={() => navigate('/notes')}>
+            <div>
+              <h4 style={{ marginBottom: '4px', fontWeight: '600', fontFamily: 'Pretendard' }}>
+                {note.title}
+              </h4>
+              <span style={{ fontSize: '12px', color: '#666', fontFamily: 'Inter' }}>
+                {note.date} | {note.tag}
+              </span>
+            </div>
+            <span style={{ fontSize: '12px', color: '#999' }}>{note.time}</span>
+          </NoteItem>
+        ))}
       </Section>
 
       <FloatingButton onClick={() => handleDateClick(new Date())}>
