@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
-import { FaPlus, FaList, FaCalendarAlt, FaChevronRight } from 'react-icons/fa';
+import { FaPlus, FaList, FaCalendarAlt, FaChevronRight, FaCog, FaTimes } from 'react-icons/fa';
 import CreateNoteModal from '../components/CreateNoteModal';
 
 const PageContainer = styled.div`
@@ -48,6 +48,7 @@ const Section = styled.section`
   padding: ${({ theme }) => theme.spacing.medium};
   border-radius: ${({ theme }) => theme.borderRadius.large};
   box-shadow: ${({ theme }) => theme.shadows.small};
+  position: relative;
 `;
 
 const Title = styled.h2`
@@ -82,6 +83,22 @@ const MoreLink = styled.span`
   }
 `;
 
+const SettingBtn = styled.button`
+  background: none;
+  border: none;
+  color: ${({ theme }) => theme.colors.textSecondary};
+  cursor: pointer;
+  font-size: 16px;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  
+  &:hover {
+    color: ${({ theme }) => theme.colors.primary};
+  }
+`;
+
 // 캘린더 스타일 오버라이드
 const StyledCalendarWrapper = styled.div`
   .react-calendar {
@@ -99,6 +116,7 @@ const StyledCalendarWrapper = styled.div`
     align-items: center;
     padding: 8px;
     color: ${({ theme }) => theme.colors.text};
+    position: relative;
   }
   .react-calendar__tile:enabled:hover,
   .react-calendar__tile:enabled:focus {
@@ -125,6 +143,15 @@ const StyledCalendarWrapper = styled.div`
   }
 `;
 
+const NoteDot = styled.div`
+  width: 6px;
+  height: 6px;
+  background-color: ${({ theme }) => theme.colors.secondary};
+  border-radius: 50%;
+  position: absolute;
+  bottom: 8px;
+`;
+
 // 시간표 (Grid) 스타일
 const TimeTableGrid = styled.div`
   display: grid;
@@ -139,13 +166,14 @@ const TimeTableGrid = styled.div`
 const GridCell = styled.div`
   background-color: ${({ theme }) => theme.colors.surface};
   color: ${({ theme }) => theme.colors.text};
-  padding: 8px;
+  padding: 4px;
   min-height: 60px;
   font-size: ${({ theme }) => theme.fontSizes.xs};
   display: flex;
   align-items: center;
   justify-content: center;
   text-align: center;
+  position: relative;
 `;
 
 const HeaderCell = styled(GridCell)`
@@ -158,11 +186,30 @@ const ClassCell = styled(GridCell)`
   color: ${({ theme }) => theme.colors.text};
   border-left: 3px solid ${({ theme, color }) => color || theme.colors.primary};
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   cursor: pointer;
+  font-size: 11px;
+  line-height: 1.2;
 
   &:hover {
     opacity: 0.8;
+  }
+`;
+
+const AddClassBtn = styled.button`
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  opacity: 0;
+  position: absolute;
+  top: 0;
+  left: 0;
+
+  &:hover {
+    opacity: 1;
+    background: ${({ theme }) => theme.colors.primary}11;
   }
 `;
 
@@ -228,14 +275,94 @@ const NoteItemTime = styled.span`
   color: ${({ theme }) => theme.colors.textSecondary};
 `;
 
+// 모달 스타일
+const ModalOverlay = styled.div`
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+`;
+
+const ModalContent = styled.div`
+  background: ${({ theme }) => theme.colors.surface};
+  padding: 20px;
+  border-radius: 12px;
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+`;
+
+const ModalTitle = styled.h3`
+  margin-bottom: 8px;
+  color: ${({ theme }) => theme.colors.text};
+`;
+
+const Input = styled.input`
+  padding: 8px;
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: 4px;
+  background: ${({ theme }) => theme.colors.background};
+  color: ${({ theme }) => theme.colors.text};
+`;
+
+const Button = styled.button`
+  padding: 8px;
+  background: ${({ $primary, theme }) => $primary ? theme.colors.primary : theme.colors.gray};
+  color: ${({ $primary, theme }) => $primary ? 'white' : theme.colors.text};
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+  
+  &:hover {
+    opacity: 0.9;
+  }
+`;
+
 const CalendarPage = () => {
   const [view, setView] = useState('calendar'); // 'calendar' | 'timetable'
   const [value, onChange] = useState(new Date());
   const navigate = useNavigate();
   
-  // 모달 상태
+  // 노트 생성 모달
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState(null);
+
+  // 시간표 관련 상태
+  const [timeRange, setTimeRange] = useState({ start: 9, end: 18 }); // 기본 09:00 ~ 18:00
+  const [timetableData, setTimetableData] = useState([]);
+  const [isTimeSettingOpen, setIsTimeSettingOpen] = useState(false);
+  const [classModalOpen, setClassModalOpen] = useState(false);
+  const [selectedCell, setSelectedCell] = useState(null); // { day: 0, time: 9 }
+  const [classInput, setClassInput] = useState({ name: '', room: '', color: '#4A90E2' });
+
+  // 데이터 로드
+  useEffect(() => {
+    const savedTimetable = localStorage.getItem('timetable');
+    if (savedTimetable) setTimetableData(JSON.parse(savedTimetable));
+    
+    const savedTimeRange = localStorage.getItem('timeRange');
+    if (savedTimeRange) setTimeRange(JSON.parse(savedTimeRange));
+  }, []);
+
+  // 데이터 저장
+  const saveTimetable = (newData) => {
+    setTimetableData(newData);
+    localStorage.setItem('timetable', JSON.stringify(newData));
+  };
+
+  const saveTimeRange = (newRange) => {
+    setTimeRange(newRange);
+    localStorage.setItem('timeRange', JSON.stringify(newRange));
+    setIsTimeSettingOpen(false);
+  };
 
   const handleDateClick = (date) => {
     const dateStr = typeof date === 'string' ? date : format(date, 'yyyy-MM-dd');
@@ -255,13 +382,60 @@ const CalendarPage = () => {
   };
 
   const days = ['시간', '월', '화', '수', '목', '금'];
-  const times = ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00'];
+  // 동적 시간 배열 생성
+  const times = [];
+  for (let i = timeRange.start; i < timeRange.end; i++) {
+    times.push(`${i.toString().padStart(2, '0')}:00`);
+  }
+
+  const handleCellClick = (dayIdx, timeIdx) => {
+    const time = timeRange.start + timeIdx;
+    const existing = timetableData.find(t => t.day === dayIdx && t.time === time);
+    
+    setSelectedCell({ day: dayIdx, time });
+    if (existing) {
+        setClassInput({ name: existing.name, room: existing.room, color: existing.color });
+    } else {
+        setClassInput({ name: '', room: '', color: '#4A90E2' });
+    }
+    setClassModalOpen(true);
+  };
+
+  const handleSaveClass = () => {
+    if (!selectedCell) return;
+    
+    const newData = timetableData.filter(t => !(t.day === selectedCell.day && t.time === selectedCell.time));
+    if (classInput.name) {
+        newData.push({ ...selectedCell, ...classInput });
+    }
+    saveTimetable(newData);
+    setClassModalOpen(false);
+  };
+
+  const handleDeleteClass = () => {
+    if (!selectedCell) return;
+    const newData = timetableData.filter(t => !(t.day === selectedCell.day && t.time === selectedCell.time));
+    saveTimetable(newData);
+    setClassModalOpen(false);
+  };
 
   const recentNotes = [
     { id: 1, title: '알고리즘 3주차 정리', date: '2025-10-06', tag: '전공필수', time: '방금 전' },
     { id: 2, title: '팀 프로젝트 아이디어 회의', date: '2025-10-05', tag: '캡스톤디자인', time: '어제' },
     { id: 3, title: '데이터베이스 모델링 실습', date: '2025-10-03', tag: '데이터베이스', time: '3일 전' },
   ];
+
+  // 날짜 타일 내용 (메모 있으면 점 표시)
+  const tileContent = ({ date, view }) => {
+    if (view === 'month') {
+      const dateStr = format(date, 'yyyy-MM-dd');
+      const hasNote = localStorage.getItem(`note_${dateStr}`);
+      if (hasNote) {
+        return <NoteDot />;
+      }
+    }
+    return null;
+  };
 
   return (
     <PageContainer>
@@ -284,35 +458,46 @@ const CalendarPage = () => {
                 value={value} 
                 onClickDay={handleDateClick}
                 formatDay={(locale, date) => format(date, 'd')}
+                calendarType="gregory" // 일요일 시작
+                tileContent={tileContent} // 메모 점 표시
               />
             </StyledCalendarWrapper>
           </>
         ) : (
           <>
-            <Title>
-              이번 주 시간표 <DummyBadge>DUMMY</DummyBadge>
-            </Title>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <Title style={{ marginBottom: 0 }}>
+                이번 주 시간표
+                </Title>
+                <SettingBtn onClick={() => setIsTimeSettingOpen(true)}>
+                    <FaCog /> 시간 설정
+                </SettingBtn>
+            </div>
+            
             <TimeTableGrid>
               {days.map((day) => <HeaderCell key={day}>{day}</HeaderCell>)}
               {times.map((time, i) => (
                 <React.Fragment key={time}>
                   <GridCell>{time}</GridCell>
                   {[0, 1, 2, 3, 4].map((dayIdx) => {
-                    if (dayIdx === 0 && i === 1) {
+                    const currentClass = timetableData.find(t => t.day === dayIdx && t.time === (timeRange.start + i));
+                    
+                    if (currentClass) {
                       return (
-                        <ClassCell key={dayIdx} color="#E74C3C" onClick={() => handleDateClick('2025-10-06')}>
-                          알고리즘<br/>(302호)
+                        <ClassCell 
+                            key={dayIdx} 
+                            color={currentClass.color} 
+                            onClick={() => handleCellClick(dayIdx, i)}
+                        >
+                          {currentClass.name}<br/>({currentClass.room})
                         </ClassCell>
                       );
                     }
-                    if (dayIdx === 2 && i === 4) {
-                      return (
-                        <ClassCell key={dayIdx} color="#F5A623" onClick={() => handleDateClick('2025-10-08')}>
-                          데이터베이스<br/>(205호)
-                        </ClassCell>
-                      );
-                    }
-                    return <GridCell key={dayIdx} />;
+                    return (
+                        <GridCell key={dayIdx}>
+                            <AddClassBtn onClick={() => handleCellClick(dayIdx, i)} />
+                        </GridCell>
+                    );
                   })}
                 </React.Fragment>
               ))}
@@ -351,6 +536,57 @@ const CalendarPage = () => {
           onConfirm={handleCreateNote} 
         />
       )}
+
+      {/* 시간표 설정 모달 */}
+      {isTimeSettingOpen && (
+        <ModalOverlay onClick={() => setIsTimeSettingOpen(false)}>
+            <ModalContent onClick={e => e.stopPropagation()}>
+                <ModalTitle>시간표 범위 설정</ModalTitle>
+                <div style={{display: 'flex', gap: '10px', alignItems: 'center'}}>
+                    <span>시작:</span>
+                    <Input type="number" value={timeRange.start} onChange={e => setTimeRange({...timeRange, start: Number(e.target.value)})} min="6" max="22" />
+                </div>
+                <div style={{display: 'flex', gap: '10px', alignItems: 'center'}}>
+                    <span>종료:</span>
+                    <Input type="number" value={timeRange.end} onChange={e => setTimeRange({...timeRange, end: Number(e.target.value)})} min="12" max="24" />
+                </div>
+                <Button $primary onClick={() => saveTimeRange(timeRange)}>저장</Button>
+            </ModalContent>
+        </ModalOverlay>
+      )}
+
+      {/* 수업 입력 모달 */}
+      {classModalOpen && (
+        <ModalOverlay onClick={() => setClassModalOpen(false)}>
+            <ModalContent onClick={e => e.stopPropagation()}>
+                <ModalTitle>수업 정보 입력</ModalTitle>
+                <Input 
+                    placeholder="수업명" 
+                    value={classInput.name} 
+                    onChange={e => setClassInput({...classInput, name: e.target.value})} 
+                />
+                <Input 
+                    placeholder="강의실" 
+                    value={classInput.room} 
+                    onChange={e => setClassInput({...classInput, room: e.target.value})} 
+                />
+                <div style={{display: 'flex', gap: '10px', alignItems: 'center'}}>
+                    <span>색상:</span>
+                    <Input 
+                        type="color" 
+                        value={classInput.color} 
+                        onChange={e => setClassInput({...classInput, color: e.target.value})} 
+                        style={{height: '40px', padding: '2px'}}
+                    />
+                </div>
+                <div style={{display: 'flex', gap: '10px', marginTop: '10px'}}>
+                    <Button style={{flex: 1}} onClick={handleDeleteClass}>삭제</Button>
+                    <Button $primary style={{flex: 1}} onClick={handleSaveClass}>저장</Button>
+                </div>
+            </ModalContent>
+        </ModalOverlay>
+      )}
+
     </PageContainer>
   );
 };
