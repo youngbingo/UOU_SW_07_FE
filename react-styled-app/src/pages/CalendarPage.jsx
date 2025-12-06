@@ -3,8 +3,9 @@ import styled from 'styled-components';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 import { useNavigate } from 'react-router-dom';
-import { format, addDays, startOfWeek } from 'date-fns';
+import { format } from 'date-fns';
 import { FaPlus, FaList, FaCalendarAlt, FaChevronRight } from 'react-icons/fa';
+import CreateNoteModal from '../components/CreateNoteModal';
 
 const PageContainer = styled.div`
   display: flex;
@@ -16,7 +17,7 @@ const PageContainer = styled.div`
 
 const ViewToggle = styled.div`
   display: flex;
-  background: white;
+  background: ${({ theme }) => theme.colors.surface};
   padding: 4px;
   border-radius: ${({ theme }) => theme.borderRadius.medium};
   box-shadow: ${({ theme }) => theme.shadows.small};
@@ -43,7 +44,7 @@ const ToggleBtn = styled.button`
 `;
 
 const Section = styled.section`
-  background: white;
+  background: ${({ theme }) => theme.colors.surface};
   padding: ${({ theme }) => theme.spacing.medium};
   border-radius: ${({ theme }) => theme.borderRadius.large};
   box-shadow: ${({ theme }) => theme.shadows.small};
@@ -60,8 +61,8 @@ const Title = styled.h2`
 
 const DummyBadge = styled.span`
   font-size: 12px;
-  background-color: #eee;
-  color: #888;
+  background-color: ${({ theme }) => theme.colors.gray};
+  color: ${({ theme }) => theme.colors.textSecondary};
   padding: 2px 6px;
   border-radius: 4px;
   font-weight: normal;
@@ -87,6 +88,8 @@ const StyledCalendarWrapper = styled.div`
     width: 100%;
     border: none;
     font-family: inherit;
+    background: ${({ theme }) => theme.colors.surface};
+    color: ${({ theme }) => theme.colors.text};
   }
   .react-calendar__tile {
     height: 60px;
@@ -95,15 +98,30 @@ const StyledCalendarWrapper = styled.div`
     justify-content: flex-start;
     align-items: center;
     padding: 8px;
+    color: ${({ theme }) => theme.colors.text};
+  }
+  .react-calendar__tile:enabled:hover,
+  .react-calendar__tile:enabled:focus {
+    background: ${({ theme }) => theme.colors.gray};
   }
   .react-calendar__tile--active {
-    background: ${({ theme }) => theme.colors.primary};
-    color: white;
+    background: ${({ theme }) => theme.colors.primary} !important;
+    color: white !important;
     border-radius: ${({ theme }) => theme.borderRadius.medium};
   }
   .react-calendar__tile--now {
     background: ${({ theme }) => theme.colors.secondary}33;
     border-radius: ${({ theme }) => theme.borderRadius.medium};
+  }
+  .react-calendar__month-view__days__day--weekend {
+    color: ${({ theme }) => theme.colors.danger};
+  }
+  .react-calendar__navigation button {
+    color: ${({ theme }) => theme.colors.text};
+  }
+  .react-calendar__navigation button:enabled:hover,
+  .react-calendar__navigation button:enabled:focus {
+    background-color: ${({ theme }) => theme.colors.gray};
   }
 `;
 
@@ -119,7 +137,8 @@ const TimeTableGrid = styled.div`
 `;
 
 const GridCell = styled.div`
-  background-color: white;
+  background-color: ${({ theme }) => theme.colors.surface};
+  color: ${({ theme }) => theme.colors.text};
   padding: 8px;
   min-height: 60px;
   font-size: ${({ theme }) => theme.fontSizes.xs};
@@ -191,20 +210,53 @@ const NoteItem = styled.div`
   }
 `;
 
+const NoteItemTitle = styled.h4`
+  margin-bottom: 4px;
+  font-weight: 600;
+  font-family: 'Pretendard';
+  color: ${({ theme }) => theme.colors.text};
+`;
+
+const NoteItemMeta = styled.span`
+  font-size: 12px;
+  color: ${({ theme }) => theme.colors.textSecondary};
+  font-family: 'Inter';
+`;
+
+const NoteItemTime = styled.span`
+  font-size: 12px;
+  color: ${({ theme }) => theme.colors.textSecondary};
+`;
+
 const CalendarPage = () => {
   const [view, setView] = useState('calendar'); // 'calendar' | 'timetable'
   const [value, onChange] = useState(new Date());
   const navigate = useNavigate();
+  
+  // 모달 상태
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(null);
 
   const handleDateClick = (date) => {
     const dateStr = typeof date === 'string' ? date : format(date, 'yyyy-MM-dd');
-    navigate(`/note/${dateStr}`);
+    const existingNote = localStorage.getItem(`note_${dateStr}`);
+    
+    if (existingNote) {
+        navigate(`/note/${dateStr}`);
+    } else {
+        setSelectedDate(dateStr);
+        setIsModalOpen(true);
+    }
+  };
+
+  const handleCreateNote = (settings) => {
+    setIsModalOpen(false);
+    navigate(`/note/${selectedDate}`, { state: settings });
   };
 
   const days = ['시간', '월', '화', '수', '목', '금'];
   const times = ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00'];
 
-  // 더미 노트 데이터
   const recentNotes = [
     { id: 1, title: '알고리즘 3주차 정리', date: '2025-10-06', tag: '전공필수', time: '방금 전' },
     { id: 2, title: '팀 프로젝트 아이디어 회의', date: '2025-10-05', tag: '캡스톤디자인', time: '어제' },
@@ -279,14 +331,12 @@ const CalendarPage = () => {
         {recentNotes.map((note) => (
           <NoteItem key={note.id} onClick={() => navigate('/notes')}>
             <div>
-              <h4 style={{ marginBottom: '4px', fontWeight: '600', fontFamily: 'Pretendard' }}>
-                {note.title}
-              </h4>
-              <span style={{ fontSize: '12px', color: '#666', fontFamily: 'Inter' }}>
+              <NoteItemTitle>{note.title}</NoteItemTitle>
+              <NoteItemMeta>
                 {note.date} | {note.tag}
-              </span>
+              </NoteItemMeta>
             </div>
-            <span style={{ fontSize: '12px', color: '#999' }}>{note.time}</span>
+            <NoteItemTime>{note.time}</NoteItemTime>
           </NoteItem>
         ))}
       </Section>
@@ -294,6 +344,13 @@ const CalendarPage = () => {
       <FloatingButton onClick={() => handleDateClick(new Date())}>
         <FaPlus />
       </FloatingButton>
+
+      {isModalOpen && (
+        <CreateNoteModal 
+          onClose={() => setIsModalOpen(false)} 
+          onConfirm={handleCreateNote} 
+        />
+      )}
     </PageContainer>
   );
 };

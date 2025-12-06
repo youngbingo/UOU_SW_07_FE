@@ -1,7 +1,7 @@
 import React from 'react';
 import styled from 'styled-components';
 import { useNavigate } from 'react-router-dom';
-import { FaPen, FaSearch, FaFilter } from 'react-icons/fa';
+import { FaPen, FaSearch } from 'react-icons/fa';
 
 const PageContainer = styled.div`
   display: flex;
@@ -24,7 +24,7 @@ const Title = styled.h2`
 const SearchBar = styled.div`
   display: flex;
   align-items: center;
-  background: white;
+  background: ${({ theme }) => theme.colors.surface};
   padding: 8px 16px;
   border-radius: 20px;
   border: 1px solid ${({ theme }) => theme.colors.border};
@@ -38,6 +38,8 @@ const SearchBar = styled.div`
     margin-left: 8px;
     width: 100%;
     font-size: ${({ theme }) => theme.fontSizes.medium};
+    background: transparent;
+    color: ${({ theme }) => theme.colors.text};
   }
 `;
 
@@ -54,7 +56,7 @@ const FilterBar = styled.div`
 `;
 
 const FilterChip = styled.button`
-  background: ${({ $active, theme }) => $active ? theme.colors.primary : 'white'};
+  background: ${({ $active, theme }) => $active ? theme.colors.primary : theme.colors.surface};
   color: ${({ $active, theme }) => $active ? 'white' : theme.colors.text};
   border: 1px solid ${({ $active, theme }) => $active ? theme.colors.primary : theme.colors.border};
   padding: 6px 12px;
@@ -75,7 +77,7 @@ const NoteList = styled.div`
 `;
 
 const NoteCard = styled.div`
-  background: white;
+  background: ${({ theme }) => theme.colors.surface};
   border-radius: ${({ theme }) => theme.borderRadius.medium};
   padding: ${({ theme }) => theme.spacing.medium};
   box-shadow: ${({ theme }) => theme.shadows.small};
@@ -92,6 +94,14 @@ const NoteTitle = styled.h3`
   font-size: ${({ theme }) => theme.fontSizes.medium};
   margin-bottom: 4px;
   font-family: 'Pretendard';
+  color: ${({ theme }) => theme.colors.text};
+`;
+
+const NotePreview = styled.p`
+  font-size: 14px;
+  color: ${({ theme }) => theme.colors.textSecondary};
+  margin-bottom: 10px;
+  line-height: 1.4;
 `;
 
 const NoteMeta = styled.div`
@@ -149,9 +159,9 @@ const NoteListPage = () => {
               <NoteTitle>{note.title}</NoteTitle>
               <Tag>{note.tag}</Tag>
             </div>
-            <p style={{ fontSize: '14px', color: '#555', marginBottom: '10px', lineHeight: '1.4' }}>
+            <NotePreview>
               {note.preview}
-            </p>
+            </NotePreview>
             <NoteMeta>
               <span>{note.date}</span>
               <FaPen style={{ fontSize: '12px' }} />
@@ -164,4 +174,3 @@ const NoteListPage = () => {
 };
 
 export default NoteListPage;
-

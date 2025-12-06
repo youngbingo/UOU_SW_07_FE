@@ -1,15 +1,10 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { ThemeProvider } from 'styled-components'
 import App from './App.jsx'
-import GlobalStyle from './styles/GlobalStyle'
-import theme from './styles/theme'
 
+// ThemeProvider와 GlobalStyle은 App.jsx로 이동했습니다.
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <ThemeProvider theme={theme}>
-      <GlobalStyle />
-      <App />
-    </ThemeProvider>
+    <App />
   </React.StrictMode>,
 )
