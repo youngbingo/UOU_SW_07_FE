@@ -444,11 +444,17 @@ const CalendarPage = () => {
     // 새 노트 ID 생성 (timestamp)
     const newNoteId = `${selectedDate}_${Date.now()}`;
     
+    // 제목 자동 생성
+    const sameDayNotes = dayNotes.filter(note => note.date === selectedDate);
+    const noteNumber = sameDayNotes.length + 1;
+    const autoTitle = `${selectedDate} 노트 ${noteNumber}`;
+    
     // 빈 노트 데이터 생성
     const newNote = {
         id: newNoteId,
         date: selectedDate,
-        title: '새로운 노트',
+        title: autoTitle, // ✨ 자동 생성된 제목
+        category: settings.category || '기타', // ✨ 선택한 과목
         updatedAt: new Date().toISOString(), // updatedAt 추가
         ...settings
     };

@@ -137,16 +137,33 @@ const NoteListItem = styled.div`
   }
 `;
 
-const CreateNoteModal = ({ onClose, onConfirm, dayNotes = [], onSelectNote, onDeleteNote }) => {
-  const [step, setStep] = useState(dayNotes.length > 0 ? 0 : 1); // 0: 목록, 1: Method, 2: Template
+const CreateNoteModal = ({ onClose, onConfirm, dayNotes = [], onSelectNote, onDeleteNote, selectedDate }) => {
+  const [step, setStep] = useState(dayNotes.length > 0 ? 0 : 1); // 0: 목록, 1: 과목 선택, 2: Method, 3: Template
+  const [category, setCategory] = useState('기타'); // 과목 선택
   const [method, setMethod] = useState('text');
   const [template, setTemplate] = useState('blank');
   const [confirmState, setConfirmState] = useState({ isOpen: false, noteId: null });
+  const [subjects, setSubjects] = useState([]); // 시간표 과목 목록
+
+  // 시간표에서 과목 목록 가져오기
+  React.useEffect(() => {
+    const savedTimetable = localStorage.getItem('timetable');
+    if (savedTimetable) {
+      try {
+        const parsed = JSON.parse(savedTimetable);
+        const uniqueSubjects = [...new Set(parsed.map(item => item.name))].filter(Boolean);
+        setSubjects(uniqueSubjects);
+      } catch (e) {
+        console.error('Failed to load timetable subjects', e);
+      }
+    }
+  }, []);
 
   const handleNext = () => {
     if (step === 0) setStep(1);
     else if (step === 1) setStep(2);
-    else onConfirm({ method, template });
+    else if (step === 2) setStep(3);
+    else onConfirm({ method, template, category });
   };
 
   const handleDeleteClick = (e, noteId) => {
@@ -188,6 +205,35 @@ const CreateNoteModal = ({ onClose, onConfirm, dayNotes = [], onSelectNote, onDe
 
         {step === 1 && (
           <>
+            <Title>어떤 과목인가요?</Title>
+            <NoteList style={{maxHeight: '300px'}}>
+              {subjects.map(subject => (
+                <OptionCard 
+                  key={subject}
+                  $selected={category === subject} 
+                  onClick={() => setCategory(subject)}
+                  style={{padding: '12px', marginBottom: '8px'}}
+                >
+                  <span>{subject}</span>
+                </OptionCard>
+              ))}
+              <OptionCard 
+                $selected={category === '기타'} 
+                onClick={() => setCategory('기타')}
+                style={{padding: '12px', marginBottom: '8px'}}
+              >
+                <span>기타</span>
+              </OptionCard>
+            </NoteList>
+            <ButtonGroup>
+              <Button onClick={onClose}>취소</Button>
+              <Button $primary onClick={handleNext}>다음</Button>
+            </ButtonGroup>
+          </>
+        )}
+
+        {step === 2 && (
+          <>
             <Title>어떻게 기록할까요?</Title>
             <StepContainer>
               <OptionCard $selected={method === 'text'} onClick={() => setMethod('text')}>
@@ -200,13 +246,13 @@ const CreateNoteModal = ({ onClose, onConfirm, dayNotes = [], onSelectNote, onDe
               </OptionCard>
             </StepContainer>
             <ButtonGroup>
-              <Button onClick={onClose}>취소</Button>
+              <Button onClick={() => setStep(1)}>이전</Button>
               <Button $primary onClick={handleNext}>다음</Button>
             </ButtonGroup>
           </>
         )}
 
-        {step === 2 && (
+        {step === 3 && (
           <>
             <Title>템플릿을 선택해주세요</Title>
             <StepContainer>
@@ -253,7 +299,7 @@ const CreateNoteModal = ({ onClose, onConfirm, dayNotes = [], onSelectNote, onDe
               )}
             </StepContainer>
             <ButtonGroup>
-              <Button onClick={() => setStep(1)}>이전</Button>
+              <Button onClick={() => setStep(2)}>이전</Button>
               <Button $primary onClick={handleNext}>노트 생성</Button>
             </ButtonGroup>
           </>

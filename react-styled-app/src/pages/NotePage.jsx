@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import styled from 'styled-components';
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { FaSave, FaArrowLeft, FaBold, FaItalic, FaUnderline, FaPalette, FaListUl, FaMinus, FaSmile, FaPen, FaEraser, FaTrash, FaHighlighter, FaUndo, FaRedo, FaShapes, FaHandPaper, FaImage, FaFilePdf, FaSquare, FaCircle, FaPlay } from 'react-icons/fa';
+import { FaSave, FaArrowLeft, FaBold, FaItalic, FaUnderline, FaPalette, FaListUl, FaMinus, FaSmile, FaPen, FaEraser, FaTrash, FaHighlighter, FaUndo, FaRedo, FaShapes, FaHandPaper, FaImage, FaFilePdf, FaSquare, FaCircle, FaPlay, FaSyncAlt } from 'react-icons/fa';
 import EmojiPicker from 'emoji-picker-react';
 import { Stage, Layer, Line, Circle, Rect, Image as KonvaImage, Transformer, RegularPolygon } from 'react-konva';
 import useImage from 'use-image';
@@ -249,6 +249,42 @@ const ContentEditable = styled.div`
   }
 `;
 
+// 이미지 컨트롤 버튼 그룹
+const ImageControls = styled.div`
+  position: absolute;
+  top: ${({ y }) => y - 50}px;
+  left: ${({ x }) => x}px;
+  display: flex;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.7);
+  padding: 8px;
+  border-radius: 8px;
+  z-index: 1000;
+`;
+
+const ImageControlBtn = styled.button`
+  background: white;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: ${({ $danger }) => $danger ? '#e74c3c' : '#333'};
+  transition: all 0.2s;
+
+  &:hover {
+    background: ${({ $danger }) => $danger ? '#e74c3c' : '#f0f0f0'};
+    color: ${({ $danger }) => $danger ? 'white' : '#333'};
+  }
+
+  svg {
+    font-size: 14px;
+  }
+`;
+
 const DrawingLayer = styled.div`
   position: absolute;
   top: 0;
@@ -340,7 +376,7 @@ const EditableShape = ({ shapeProps, isSelected, onSelect, onChange }) => {
 };
 
 // 이미지를 로드하는 컴포넌트
-const URLImage = ({ image, isSelected, onSelect, onChange }) => {
+const URLImage = ({ image, isSelected, onSelect, onChange, onRotate, onDelete }) => {
   const [img] = useImage(image.src);
   const shapeRef = useRef();
   const trRef = useRef();
@@ -363,6 +399,7 @@ const URLImage = ({ image, isSelected, onSelect, onChange }) => {
         y={image.y}
         width={image.width}
         height={image.height}
+        rotation={image.rotation || 0}
         draggable
         onDragEnd={(e) => {
           onChange({
@@ -386,6 +423,7 @@ const URLImage = ({ image, isSelected, onSelect, onChange }) => {
             y: node.y(),
             width: Math.max(5, node.width() * scaleX),
             height: Math.max(5, node.height() * scaleY),
+            rotation: node.rotation(),
           });
         }}
       />
@@ -694,20 +732,23 @@ const NotePage = () => {
                             <h2>📋 회의록</h2>
                             <p><strong>일시:</strong> ${new Date().toLocaleDateString()}</p>
                             <p><strong>참석자:</strong> </p>
+                            <p><strong>작성자:</strong> </p>
                             <hr/>
                             <h3>📌 안건</h3>
                             <ul>
-                                <li></li>
+                                <li>안건 1</li>
+                                <li>안건 2</li>
                             </ul>
                             <h3>💬 논의 내용</h3>
-                            <p></p>
+                            <p>주요 논의 사항을 작성하세요...</p>
                             <h3>✅ 결정 사항</h3>
                             <ul>
-                                <li></li>
+                                <li>결정 사항 1</li>
+                                <li>결정 사항 2</li>
                             </ul>
                             <h3>📝 다음 액션 아이템</h3>
                             <ul>
-                                <li></li>
+                                <li>[ ] 할 일 - 담당자 (기한)</li>
                             </ul>
                         `;
                     } else if (settings.template === 'dev_log') {
@@ -716,32 +757,45 @@ const NotePage = () => {
                             <p><strong>날짜:</strong> ${new Date().toLocaleDateString()}</p>
                             <hr/>
                             <h3>🎯 오늘의 목표</h3>
-                            <p></p>
+                            <ul>
+                                <li>목표 1</li>
+                                <li>목표 2</li>
+                            </ul>
                             <h3>📚 학습 내용</h3>
-                            <p></p>
+                            <p>오늘 배운 내용을 정리하세요...</p>
                             <h3>🔨 구현 내용</h3>
-                            <p></p>
+                            <p>오늘 구현한 기능이나 작성한 코드를 설명하세요...</p>
                             <h3>❓ 문제 & 해결</h3>
-                            <p></p>
+                            <p><strong>문제:</strong> </p>
+                            <p><strong>해결:</strong> </p>
                             <h3>💡 배운 점 / 느낀 점</h3>
-                            <p></p>
+                            <p>오늘의 인사이트를 작성하세요...</p>
                         `;
                     } else if (settings.template === 'todo') {
                         initialHTML = `
                             <h2>✅ 체크리스트</h2>
                             <p><strong>날짜:</strong> ${new Date().toLocaleDateString()}</p>
                             <hr/>
-                            <h3>오늘 할 일</h3>
+                            <h3>🔴 긴급 & 중요</h3>
                             <ul>
-                                <li>☐ </li>
-                                <li>☐ </li>
-                                <li>☐ </li>
+                                <li>☐ 할 일 작성</li>
                             </ul>
-                            <h3>우선순위</h3>
+                            <h3>🟡 중요하지만 급하지 않음</h3>
                             <ul>
-                                <li>🔴 긴급: </li>
-                                <li>🟡 중요: </li>
-                                <li>🟢 보통: </li>
+                                <li>☐ 할 일 작성</li>
+                            </ul>
+                            <h3>🟢 급하지만 중요하지 않음</h3>
+                            <ul>
+                                <li>☐ 할 일 작성</li>
+                            </ul>
+                            <h3>⚪ 나중에 해도 됨</h3>
+                            <ul>
+                                <li>☐ 할 일 작성</li>
+                            </ul>
+                            <hr/>
+                            <h3>✨ 완료한 작업</h3>
+                            <ul>
+                                <li>✅ 완료한 작업 작성</li>
                             </ul>
                         `;
                     }
@@ -1019,6 +1073,7 @@ const NotePage = () => {
                     y: 50,
                     width: 200,
                     height: 200 * (imgObj.height / imgObj.width),
+                    rotation: 0,
                 };
                 const newImages = [...images, newImage];
                 setImages(newImages);
@@ -1041,6 +1096,30 @@ const NotePage = () => {
     }
     // 같은 파일 다시 선택 가능하게 초기화
     e.target.value = '';
+  };
+
+  // 이미지 회전 핸들러
+  const handleRotateImage = () => {
+    if (!selectedImageId) return;
+    const imageIndex = images.findIndex(img => img.id === selectedImageId);
+    if (imageIndex === -1) return;
+    
+    const newImages = [...images];
+    newImages[imageIndex] = {
+      ...newImages[imageIndex],
+      rotation: ((newImages[imageIndex].rotation || 0) + 90) % 360
+    };
+    setImages(newImages);
+    saveHistory(lines, newImages, shapes);
+  };
+
+  // 이미지 삭제 핸들러
+  const handleDeleteImage = () => {
+    if (!selectedImageId) return;
+    const newImages = images.filter(img => img.id !== selectedImageId);
+    setImages(newImages);
+    setSelectedImageId(null);
+    saveHistory(lines, newImages, shapes);
   };
 
   const onDocumentLoadSuccess = ({ numPages }) => {
@@ -1640,6 +1719,23 @@ const NotePage = () => {
                         )}
                       </Layer>
                   </Stage>
+
+                  {/* 이미지 컨트롤 버튼 - Stage 외부에 렌더링 */}
+                  {selectedImageId && images.find(img => img.id === selectedImageId) && (
+                    <ImageControls
+                      x={images.find(img => img.id === selectedImageId).x}
+                      y={images.find(img => img.id === selectedImageId).y}
+                    >
+                      <ImageControlBtn onClick={handleRotateImage}>
+                        <FaSyncAlt />
+                        회전
+                      </ImageControlBtn>
+                      <ImageControlBtn $danger onClick={handleDeleteImage}>
+                        <FaTrash />
+                        삭제
+                      </ImageControlBtn>
+                    </ImageControls>
+                  )}
               </DrawingLayer>
           )}
 
