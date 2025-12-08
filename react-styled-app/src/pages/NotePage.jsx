@@ -370,6 +370,18 @@ const PDFBackgroundContainer = styled.div`
   }
 `;
 
+const CanvasBorder = styled.div`
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border: 2px dashed ${({ theme }) => theme.colors.primary}44; // 옅은 점선
+  pointer-events: none;
+  z-index: 10;
+  display: ${({ $visible }) => $visible ? 'block' : 'none'};
+`;
+
 const NotePage = () => {
   const { date } = useParams();
   const navigate = useNavigate();
@@ -394,7 +406,8 @@ const NotePage = () => {
   const [tool, setTool] = useState('pen'); // 'pen', 'eraser', 'highlighter', 'shape'
   const [lineWidth, setLineWidth] = useState(2);
   const [lines, setLines] = useState([]);
-  const [history, setHistory] = useState([[]]);
+  // 히스토리 구조 변경: { lines, images } 객체를 저장
+  const [history, setHistory] = useState([{ lines: [], images: [] }]);
   const [historyStep, setHistoryStep] = useState(0);
   const isDrawing = useRef(false);
   const [isPenModeOnly, setIsPenModeOnly] = useState(false); // 팜 리젝션 (펜 전용 모드)
@@ -496,7 +509,9 @@ const NotePage = () => {
       if (parsed.category) setCategory(parsed.category);
       if (parsed.drawingData) {
         setLines(parsed.drawingData);
-        setHistory([parsed.drawingData]);
+        // 초기 로드 시 히스토리도 동기화
+        const initialImages = parsed.images || [];
+        setHistory([{ lines: parsed.drawingData, images: initialImages }]);
         setHistoryStep(0);
       }
       if (parsed.images) {
@@ -521,6 +536,23 @@ const NotePage = () => {
         }
     }
   }, [date, settings.method, settings.template]);
+
+  useEffect(() => {
+    // 키보드 이벤트 리스너: Delete 키로 이미지 삭제
+    const handleKeyDown = (e) => {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedImageId) {
+        const newImages = images.filter(img => img.id !== selectedImageId);
+        setImages(newImages);
+        setSelectedImageId(null);
+        saveHistory(lines, newImages);
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [selectedImageId, images, lines]); // lines 의존성 추가
 
   // ... (Selection, Style, Save 함수들 생략 - 기존 코드 유지)
   const saveSelection = () => {
@@ -625,17 +657,30 @@ const NotePage = () => {
     navigate('/');
   };
 
+  // 히스토리 저장 함수
+  const saveHistory = (newLines, newImages) => {
+    const newHistory = history.slice(0, historyStep + 1);
+    newHistory.push({ 
+        lines: newLines !== undefined ? newLines : lines, 
+        images: newImages !== undefined ? newImages : images 
+    });
+    setHistory(newHistory);
+    setHistoryStep(newHistory.length - 1);
+  };
+
   const handleUndo = () => {
     if (historyStep === 0) return;
     const previous = history[historyStep - 1];
-    setLines(previous);
+    setLines(previous.lines);
+    setImages(previous.images);
     setHistoryStep(historyStep - 1);
   };
 
   const handleRedo = () => {
     if (historyStep === history.length - 1) return;
     const next = history[historyStep + 1];
-    setLines(next);
+    setLines(next.lines);
+    setImages(next.images);
     setHistoryStep(historyStep + 1);
   };
 
@@ -656,7 +701,9 @@ const NotePage = () => {
                     width: 200,
                     height: 200 * (imgObj.height / imgObj.width),
                 };
-                setImages([...images, newImage]);
+                const newImages = [...images, newImage];
+                setImages(newImages);
+                saveHistory(lines, newImages);
             };
         } else {
             // 텍스트 모드: 에디터에 이미지 삽입
@@ -774,10 +821,8 @@ const NotePage = () => {
     const newLines = lines.concat(newLine);
     setLines(newLines);
     
-    const newHistory = history.slice(0, historyStep + 1);
-    newHistory.push(newLines);
-    setHistory(newHistory);
-    setHistoryStep(newHistory.length - 1);
+    // 히스토리 저장
+    saveHistory(newLines, images);
     
     currentLineRef.current = null;
     // 상태 업데이트 후 레이어 다시 그리기
@@ -878,19 +923,44 @@ const NotePage = () => {
                 <FaRedo />
               </ToolBtn>
 
-              <div style={{ width: '1px', height: '24px', background: '#ddd', margin: '0 4px' }}></div>
+              <ToolBtn 
+                onClick={() => pdfInputRef.current.click()} 
+                title="PDF 불러오기"
+              >
+                <FaFilePdf />
+              </ToolBtn>
+              <input 
+                type="file" 
+                accept="application/pdf" 
+                ref={pdfInputRef} 
+                style={{ display: 'none' }} 
+                onChange={handlePdfUpload}
+              />
 
+              <div style={{ width: '1px', height: '24px', background: '#ddd', margin: '0 4px' }}></div>
+              
               <ToolBtn 
                 onClick={() => {
-                    if(window.confirm('모든 필기 내용을 지우시겠습니까?')) {
-                        setLines([]);
-                        setHistory([[]]);
-                        setHistoryStep(0);
+                    if (selectedImageId) {
+                        // 이미지 선택 상태면 이미지 삭제
+                        if(window.confirm('선택한 이미지를 삭제하시겠습니까?')) {
+                            const newImages = images.filter(img => img.id !== selectedImageId);
+                            setImages(newImages);
+                            setSelectedImageId(null);
+                            saveHistory(lines, newImages);
+                        }
+                    } else {
+                        // 아니면 전체 필기 삭제
+                        if(window.confirm('모든 필기 내용을 지우시겠습니까?')) {
+                            setLines([]);
+                            setHistory([{ lines: [], images: images }]); // 이미지는 유지? or 전체 삭제? -> 일단 필기만 삭제
+                            setHistoryStep(0); // 전체 삭제는 히스토리 리셋하는 게 일반적임
+                        }
                     }
                 }}
-                title="전체 지우기"
+                title={selectedImageId ? "선택한 이미지 삭제" : "전체 지우기"}
               >
-                <FaTrash />
+                <FaTrash color={selectedImageId ? "#e74c3c" : "inherit"} />
               </ToolBtn>
               
               <div style={{ width: '1px', height: '24px', background: '#ddd', margin: '0 4px' }}></div>
@@ -1009,20 +1079,6 @@ const NotePage = () => {
                 onChange={handleImageUpload}
               />
 
-              <ToolBtn 
-                onClick={() => pdfInputRef.current.click()} 
-                title="PDF 불러오기"
-              >
-                <FaFilePdf />
-              </ToolBtn>
-              <input 
-                type="file" 
-                accept="application/pdf" 
-                ref={pdfInputRef} 
-                style={{ display: 'none' }} 
-                onChange={handlePdfUpload}
-              />
-
               <div style={{ width: '1px', height: '24px', background: '#ddd', margin: '0 4px' }}></div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
@@ -1087,6 +1143,7 @@ const NotePage = () => {
           {/* 드로잉 캔버스 (손글씨 모드일 때만 활성화) */}
           {settings.method === 'handwriting' && (
               <DrawingLayer $active={true}>
+                  <CanvasBorder $visible={true} />
                   <Stage 
                       width={window.innerWidth} 
                       height={pdfFile && numPages ? numPages * 1150 : window.innerHeight} // PDF 길이에 맞춰 캔버스 높이 확장 (대략적 계산)
@@ -1115,6 +1172,8 @@ const NotePage = () => {
                                     const newImages = images.slice();
                                     newImages[i] = newAttrs;
                                     setImages(newImages);
+                                    // 드래그/변형 종료 시 히스토리 저장
+                                    saveHistory(lines, newImages);
                                 }}
                             />
                         ))}
