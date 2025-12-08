@@ -1,9 +1,18 @@
 import React, { useState, useRef, useEffect } from 'react';
 import styled from 'styled-components';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { FaSave, FaArrowLeft, FaBold, FaItalic, FaUnderline, FaPalette, FaListUl, FaMinus, FaSmile, FaPen, FaEraser, FaTrash, FaHighlighter, FaUndo, FaRedo, FaShapes, FaHandPaper } from 'react-icons/fa';
+import { FaSave, FaArrowLeft, FaBold, FaItalic, FaUnderline, FaPalette, FaListUl, FaMinus, FaSmile, FaPen, FaEraser, FaTrash, FaHighlighter, FaUndo, FaRedo, FaShapes, FaHandPaper, FaImage, FaFilePdf } from 'react-icons/fa';
 import EmojiPicker from 'emoji-picker-react';
-import { Stage, Layer, Line, Circle, Rect } from 'react-konva';
+import { Stage, Layer, Line, Circle, Rect, Image as KonvaImage, Transformer } from 'react-konva';
+import useImage from 'use-image';
+import { Document, Page, pdfjs } from 'react-pdf';
+
+// PDF Worker 설정 (필수)
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+
+// 스타일 추가
+import 'react-pdf/dist/Page/AnnotationLayer.css';
+import 'react-pdf/dist/Page/TextLayer.css';
 
 const PageContainer = styled.div`
   display: flex;
@@ -246,6 +255,121 @@ const DrawingLayer = styled.div`
   pointer-events: ${({ $active }) => $active ? 'auto' : 'none'};
 `;
 
+// 이미지를 로드하는 컴포넌트
+const URLImage = ({ image, isSelected, onSelect, onChange }) => {
+  const [img] = useImage(image.src);
+  const shapeRef = useRef();
+  const trRef = useRef();
+
+  useEffect(() => {
+    if (isSelected && trRef.current && shapeRef.current) {
+      trRef.current.nodes([shapeRef.current]);
+      trRef.current.getLayer().batchDraw();
+    }
+  }, [isSelected]);
+
+  return (
+    <React.Fragment>
+      <KonvaImage
+        onClick={onSelect}
+        onTap={onSelect}
+        ref={shapeRef}
+        image={img}
+        x={image.x}
+        y={image.y}
+        width={image.width}
+        height={image.height}
+        draggable
+        onDragEnd={(e) => {
+          onChange({
+            ...image,
+            x: e.target.x(),
+            y: e.target.y(),
+          });
+        }}
+        onTransformEnd={(e) => {
+          const node = shapeRef.current;
+          const scaleX = node.scaleX();
+          const scaleY = node.scaleY();
+
+          // reset scale to 1
+          node.scaleX(1);
+          node.scaleY(1);
+
+          onChange({
+            ...image,
+            x: node.x(),
+            y: node.y(),
+            width: Math.max(5, node.width() * scaleX),
+            height: Math.max(5, node.height() * scaleY),
+          });
+        }}
+      />
+      {isSelected && (
+        <Transformer
+          ref={trRef}
+          boundBoxFunc={(oldBox, newBox) => {
+            if (newBox.width < 5 || newBox.height < 5) {
+              return oldBox;
+            }
+            return newBox;
+          }}
+        />
+      )}
+    </React.Fragment>
+  );
+};
+
+// PDF 페이지를 이미지로 변환하여 렌더링하는 컴포넌트
+const PDFPageImage = ({ pdfPage, x, y, width, scale }) => {
+  const [image, setImage] = useState(null);
+
+  useEffect(() => {
+    if (!pdfPage) return;
+
+    const viewport = pdfPage.getViewport({ scale: scale || 1.0 });
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    canvas.height = viewport.height;
+    canvas.width = viewport.width;
+
+    const renderContext = {
+      canvasContext: context,
+      viewport: viewport,
+    };
+
+    const renderTask = pdfPage.render(renderContext);
+    renderTask.promise.then(() => {
+      setImage(canvas);
+    });
+  }, [pdfPage, scale]);
+
+  if (!image) return null;
+
+  return <KonvaImage image={image} x={x} y={y} width={width} />;
+};
+
+// PDF 컨테이너 (Konva 뒤에 배치)
+const PDFBackgroundContainer = styled.div`
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0; // 필기 레이어(z-index: 5)보다 아래, 에디터 배경보다 위
+  overflow: auto;
+  display: flex;
+  justify-content: center;
+  background-color: #f0f0f0;
+  pointer-events: none; // 클릭은 필기 레이어가 받음
+  
+  canvas {
+    max-width: 100%;
+    height: auto !important;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+  }
+`;
+
 const NotePage = () => {
   const { date } = useParams();
   const navigate = useNavigate();
@@ -275,6 +399,17 @@ const NotePage = () => {
   const isDrawing = useRef(false);
   const [isPenModeOnly, setIsPenModeOnly] = useState(false); // 팜 리젝션 (펜 전용 모드)
   
+  // 이미지 관련 상태
+  const [images, setImages] = useState([]);
+  const [selectedImageId, setSelectedImageId] = useState(null);
+  const fileInputRef = useRef(null);
+  
+  // PDF 관련 상태
+  const [pdfFile, setPdfFile] = useState(null);
+  const [numPages, setNumPages] = useState(null);
+  const [pdfPageImages, setPdfPageImages] = useState([]); // 렌더링된 PDF 페이지 이미지들
+  const pdfInputRef = useRef(null);
+
   // 최적화: 현재 그리고 있는 선을 위한 Ref (리액트 렌더링 우회)
   const currentLineRef = useRef(null);
   const layerRef = useRef(null);
@@ -363,6 +498,9 @@ const NotePage = () => {
         setLines(parsed.drawingData);
         setHistory([parsed.drawingData]);
         setHistoryStep(0);
+      }
+      if (parsed.images) {
+        setImages(parsed.images);
       }
     } else {
         // ... (초기 템플릿 로직 생략)
@@ -475,6 +613,7 @@ const NotePage = () => {
         template: settings.template,
         category: category,
         drawingData: lines, // 드로잉 데이터 저장
+        images: images, // 이미지 데이터 저장
         updatedAt: new Date().toISOString(),
         title: editorRef.current.innerText.split('\n')[0] || '제목 없음' 
       };
@@ -498,6 +637,73 @@ const NotePage = () => {
     const next = history[historyStep + 1];
     setLines(next);
     setHistoryStep(historyStep + 1);
+  };
+
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        if (settings.method === 'handwriting') {
+            const imgObj = new Image();
+            imgObj.src = e.target.result;
+            imgObj.onload = () => {
+                const newImage = {
+                    id: Date.now().toString(),
+                    src: e.target.result,
+                    x: 50,
+                    y: 50,
+                    width: 200,
+                    height: 200 * (imgObj.height / imgObj.width),
+                };
+                setImages([...images, newImage]);
+            };
+        } else {
+            // 텍스트 모드: 에디터에 이미지 삽입
+            restoreSelection();
+            document.execCommand('insertImage', false, e.target.result);
+            // 이미지 크기 조절을 위해 스타일 추가 (선택적)
+            const imgs = editorRef.current.getElementsByTagName('img');
+            const lastImg = imgs[imgs.length - 1];
+            if (lastImg) {
+                lastImg.style.maxWidth = '100%';
+                lastImg.style.borderRadius = '8px';
+            }
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+    // 같은 파일 다시 선택 가능하게 초기화
+    e.target.value = '';
+  };
+
+  const onDocumentLoadSuccess = ({ numPages }) => {
+    setNumPages(numPages);
+    // PDF 로드 성공 시 첫 페이지부터 순차적으로 이미지화는 여기서 처리하지 않고
+    // Document 컴포넌트 내부에서 onLoadSuccess 등을 활용하거나
+    // react-pdf는 Canvas 렌더링을 기본 지원하므로 Konva와 통합하기 위해
+    // 별도의 캔버스 변환 과정이 필요함 (위의 PDFPageImage 컴포넌트 활용 예정)
+  };
+
+  const handlePdfUpload = (e) => {
+      const file = e.target.files[0];
+      if (file) {
+          setPdfFile(file);
+          // PDF 모드로 자동 전환 (손글씨 모드 강제)
+          if (settings.method !== 'handwriting') {
+              setSettings({ ...settings, method: 'handwriting' });
+          }
+      }
+      e.target.value = '';
+  };
+
+  // 배경 클릭 시 선택 해제
+  const checkDeselect = (e) => {
+    // clicked on empty area
+    const clickedOnEmpty = e.target === e.target.getStage();
+    if (clickedOnEmpty) {
+      setSelectedImageId(null);
+    }
   };
 
   // 드로잉 이벤트 핸들러
@@ -649,6 +855,20 @@ const NotePage = () => {
                 <FaHandPaper />
               </ToolBtn>
 
+              <ToolBtn 
+                onClick={() => fileInputRef.current.click()}
+                title="이미지 삽입"
+              >
+                <FaImage />
+              </ToolBtn>
+              <input 
+                type="file" 
+                accept="image/*" 
+                ref={fileInputRef} 
+                style={{ display: 'none' }} 
+                onChange={handleImageUpload}
+              />
+
               <div style={{ width: '1px', height: '24px', background: '#ddd', margin: '0 4px' }}></div>
 
               <ToolBtn onClick={handleUndo} title="실행 취소">
@@ -775,6 +995,34 @@ const NotePage = () => {
                 )}
               </EmojiWrapper>
 
+              <ToolBtn 
+                onClick={() => fileInputRef.current.click()} 
+                title="이미지 삽입"
+              >
+                <FaImage />
+              </ToolBtn>
+              <input 
+                type="file" 
+                accept="image/*" 
+                ref={fileInputRef} 
+                style={{ display: 'none' }} 
+                onChange={handleImageUpload}
+              />
+
+              <ToolBtn 
+                onClick={() => pdfInputRef.current.click()} 
+                title="PDF 불러오기"
+              >
+                <FaFilePdf />
+              </ToolBtn>
+              <input 
+                type="file" 
+                accept="application/pdf" 
+                ref={pdfInputRef} 
+                style={{ display: 'none' }} 
+                onChange={handlePdfUpload}
+              />
+
               <div style={{ width: '1px', height: '24px', background: '#ddd', margin: '0 4px' }}></div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
@@ -813,19 +1061,64 @@ const NotePage = () => {
         </Toolbar>
         
         <div style={{ position: 'relative', flex: 1, width: '100%', overflow: 'hidden' }}>
+          
+          {/* PDF 배경 렌더링 (손글씨 모드일 때만) */}
+          {settings.method === 'handwriting' && pdfFile && (
+              <PDFBackgroundContainer>
+                  <Document
+                      file={pdfFile}
+                      onLoadSuccess={onDocumentLoadSuccess}
+                  >
+                      {/* 스크롤 가능한 전체 페이지 렌더링 */}
+                      {Array.from(new Array(numPages), (el, index) => (
+                        <Page 
+                            key={`page_${index + 1}`}
+                            pageNumber={index + 1} 
+                            width={window.innerWidth > 800 ? 800 : window.innerWidth - 40} // 적절한 너비 제한
+                            renderTextLayer={false}
+                            renderAnnotationLayer={false}
+                            className="pdf-page"
+                        />
+                      ))}
+                  </Document>
+              </PDFBackgroundContainer>
+          )}
+
           {/* 드로잉 캔버스 (손글씨 모드일 때만 활성화) */}
           {settings.method === 'handwriting' && (
               <DrawingLayer $active={true}>
                   <Stage 
                       width={window.innerWidth} 
-                      height={window.innerHeight} // 실제로는 컨테이너 크기에 맞춰야 함
-                      onMouseDown={handleMouseDown}
+                      height={pdfFile && numPages ? numPages * 1150 : window.innerHeight} // PDF 길이에 맞춰 캔버스 높이 확장 (대략적 계산)
+                      onMouseDown={(e) => {
+                        checkDeselect(e);
+                        handleMouseDown(e);
+                      }}
                       onMouseMove={handleMouseMove}
                       onMouseUp={handleMouseUp}
-                      onTouchStart={handleMouseDown}
+                      onTouchStart={(e) => {
+                        checkDeselect(e);
+                        handleMouseDown(e);
+                      }}
                       onTouchMove={handleMouseMove}
                       onTouchEnd={handleMouseUp}
                   >
+                      <Layer>
+                        {/* 이미지 객체들 */}
+                        {images.map((img, i) => (
+                            <URLImage
+                                key={img.id}
+                                image={img}
+                                isSelected={img.id === selectedImageId}
+                                onSelect={() => setSelectedImageId(img.id)}
+                                onChange={(newAttrs) => {
+                                    const newImages = images.slice();
+                                    newImages[i] = newAttrs;
+                                    setImages(newImages);
+                                }}
+                            />
+                        ))}
+                      </Layer>
                       <Layer ref={layerRef}>
                         {lines.map((line, i) => {
                             if (line.tool === 'shape_result' && line.shapeData) {
