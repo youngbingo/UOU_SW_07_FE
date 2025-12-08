@@ -199,6 +199,10 @@ const CreateNoteModal = ({ onClose, onConfirm, dayNotes = [], onSelectNote, onDe
                 <span>손글씨</span>
               </OptionCard>
             </StepContainer>
+            <ButtonGroup>
+              <Button onClick={onClose}>취소</Button>
+              <Button $primary onClick={handleNext}>다음</Button>
+            </ButtonGroup>
           </>
         )}
 
@@ -248,15 +252,12 @@ const CreateNoteModal = ({ onClose, onConfirm, dayNotes = [], onSelectNote, onDe
                 </>
               )}
             </StepContainer>
+            <ButtonGroup>
+              <Button onClick={() => setStep(1)}>이전</Button>
+              <Button $primary onClick={handleNext}>노트 생성</Button>
+            </ButtonGroup>
           </>
         )}
-
-        <ButtonGroup>
-          <Button onClick={step === 1 ? onClose : () => setStep(1)}>취소/이전</Button>
-          <Button $primary onClick={handleNext}>
-            {step === 1 ? '다음' : '노트 생성'}
-          </Button>
-        </ButtonGroup>
       </ModalContainer>
       
       <ConfirmModal

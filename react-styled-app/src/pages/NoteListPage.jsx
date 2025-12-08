@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { FaPen, FaSearch, FaTrash } from 'react-icons/fa';
 import { deleteNote } from '../utils/storage'; // deleteNote 추가
 import ConfirmModal from '../components/ConfirmModal';
@@ -146,11 +146,36 @@ const DeleteButton = styled.button`
 
 const NoteListPage = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const tagFilter = searchParams.get('tag'); // URL에서 tag 파라미터 가져오기
+  
   const [notes, setNotes] = useState([]);
   const [filteredNotes, setFilteredNotes] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('전체');
   const [searchTerm, setSearchTerm] = useState('');
   const [confirmState, setConfirmState] = useState({ isOpen: false, noteId: null, noteDate: null });
+  const [subjects, setSubjects] = useState([]); // 시간표 과목 목록
+
+  // 시간표에서 과목 목록 가져오기
+  useEffect(() => {
+    const savedTimetable = localStorage.getItem('timetable');
+    if (savedTimetable) {
+      try {
+        const parsed = JSON.parse(savedTimetable);
+        const uniqueSubjects = [...new Set(parsed.map(item => item.name))].filter(Boolean);
+        setSubjects(uniqueSubjects);
+      } catch (e) {
+        console.error('Failed to load timetable subjects', e);
+      }
+    }
+  }, []);
+
+  // URL tag 파라미터가 있으면 자동 필터링
+  useEffect(() => {
+    if (tagFilter) {
+      setSelectedCategory(tagFilter);
+    }
+  }, [tagFilter]);
 
   const loadNotes = () => {
     const loadedNotes = [];
@@ -224,8 +249,10 @@ const NoteListPage = () => {
     setFilteredNotes(result);
   }, [selectedCategory, searchTerm, notes]);
 
-  // 카테고리 목록 추출
-  const categories = ['전체', ...new Set(notes.map(n => n.category))];
+  // 카테고리 목록: 전체 + 시간표 과목 + 기타 카테고리들
+  const timetableCategories = ['전체', ...subjects];
+  const otherCategories = [...new Set(notes.map(n => n.category))].filter(cat => !subjects.includes(cat));
+  const categories = [...timetableCategories, ...otherCategories];
 
   return (
     <PageContainer>

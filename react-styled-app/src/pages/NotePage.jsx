@@ -643,7 +643,7 @@ const NotePage = () => {
             setNoteTitle(savedNote.title || '');
             
             if (editorRef.current) {
-                editorRef.current.innerHTML = savedNote.content;
+                editorRef.current.innerHTML = savedNote.content || ''; // undefined 방지
             }
             setSettings({ method: savedNote.method, template: savedNote.template });
             if (savedNote.category) setCategory(savedNote.category);
@@ -660,10 +660,8 @@ const NotePage = () => {
                 setImages(savedNote.images);
             }
         } else {
-            // 새 노트인 경우 (또는 ID가 날짜 형식인 구버전 URL 접근 시)
-            // ... (기존 초기화 로직 유지)
-            
-            // 만약 ID가 날짜 형식이면 (구버전 즐겨찾기 등)
+            // 새 노트인 경우
+            // ID가 날짜 형식이면 (구버전 즐겨찾기 등)
             if (id.match(/^\d{4}-\d{2}-\d{2}$/)) {
                 setNoteDate(id);
             } else {
@@ -674,8 +672,8 @@ const NotePage = () => {
                 }
             }
 
-            // ... (초기 템플릿 로직)
-            if (editorRef.current && editorRef.current.innerHTML === "") {
+            // 새 노트일 때 템플릿 내용 적용
+            if (editorRef.current) {
                 let initialHTML = "";
                 
                 // 손글씨 모드 템플릿
@@ -749,7 +747,10 @@ const NotePage = () => {
                     }
                 }
                 
-                if (initialHTML) editorRef.current.innerHTML = initialHTML;
+                // 템플릿 내용 적용
+                if (initialHTML) {
+                    editorRef.current.innerHTML = initialHTML;
+                }
             }
         }
     };
@@ -876,43 +877,43 @@ const NotePage = () => {
         placeholder: '노트 제목을 입력하세요',
         initialValue: extractedTitle,
         onConfirm: async (currentTitle) => {
-          const noteData = {
-            id: id, 
-            date: noteDate,
-            content: editorRef.current.innerHTML,
-            method: settings.method,
-            template: settings.template,
-            category: category,
+      const noteData = {
+        id: id, 
+        date: noteDate,
+        content: editorRef.current.innerHTML,
+        method: settings.method,
+        template: settings.template,
+        category: category,
             drawingData: lines,
             images: images,
             shapes: shapes,
-            updatedAt: new Date().toISOString(),
-            title: currentTitle
-          };
-          
-          try {
+        updatedAt: new Date().toISOString(),
+        title: currentTitle
+      };
+      
+      try {
               if (teamId) {
                   await saveTeamNote(teamId, id, noteData);
                   console.log('Team note saved successfully:', noteData);
               } else {
-                  await saveNote(id, noteData);
+          await saveNote(id, noteData);
                   console.log('Personal note saved successfully:', noteData);
               }
-              setNoteTitle(currentTitle);
+          setNoteTitle(currentTitle);
               setAlertState({
                 isOpen: true,
                 title: '성공',
                 message: '저장되었습니다!'
               });
-          } catch (e) {
-              console.error(e);
+      } catch (e) {
+          console.error(e);
               setAlertState({
                 isOpen: true,
                 title: '오류',
                 message: '저장 중 오류가 발생했습니다.'
               });
-          }
-        }
+      }
+    }
       });
     }
   };
@@ -928,7 +929,7 @@ const NotePage = () => {
             if (teamId) {
                 await deleteTeamNote(teamId, id);
             } else {
-                await deleteNote(id, noteDate);
+            await deleteNote(id, noteDate);
             }
             setAlertState({
               isOpen: true,
@@ -944,7 +945,7 @@ const NotePage = () => {
               message: '삭제 중 오류가 발생했습니다.'
             });
         }
-      }
+    }
     });
   };
 
@@ -1211,14 +1212,6 @@ const NotePage = () => {
                 <FaEraser />
               </ToolBtn>
 
-              <ToolBtn 
-                $active={tool === 'shape'} 
-                onClick={() => changeTool('shape')}
-                title="도형 보정 펜"
-              >
-                <FaShapes />
-              </ToolBtn>
-
               <div style={{ width: '1px', height: '24px', background: '#ddd', margin: '0 4px' }}></div>
 
               <ToolBtn 
@@ -1243,27 +1236,6 @@ const NotePage = () => {
                 style={{ display: 'none' }} 
                 onChange={handleImageUpload}
               />
-
-              <ToolBtn 
-                onClick={() => setShowShapeMenu(!showShapeMenu)}
-                title="도형 삽입"
-                style={{ position: 'relative' }}
-              >
-                <FaSquare />
-                {showShapeMenu && (
-                    <ShapeMenuWrapper onClick={e => e.stopPropagation()}>
-                        <ToolBtn onClick={() => handleAddShape('rect')} title="사각형">
-                            <FaSquare />
-                        </ToolBtn>
-                        <ToolBtn onClick={() => handleAddShape('circle')} title="원">
-                            <FaCircle />
-                        </ToolBtn>
-                        <ToolBtn onClick={() => handleAddShape('triangle')} title="삼각형">
-                            <FaPlay style={{ transform: 'rotate(-90deg)' }} />
-                        </ToolBtn>
-                    </ShapeMenuWrapper>
-                )}
-              </ToolBtn>
 
               <div style={{ width: '1px', height: '24px', background: '#ddd', margin: '0 4px' }}></div>
               
@@ -1304,7 +1276,7 @@ const NotePage = () => {
                             setImages(newImages);
                             setSelectedImageId(null);
                             saveHistory(lines, newImages);
-                          }
+                        }
                         });
                     } else {
                         // 아니면 전체 필기 삭제
@@ -1317,7 +1289,7 @@ const NotePage = () => {
                             setLines([]);
                             setHistory([{ lines: [], images: images }]);
                             setHistoryStep(0);
-                          }
+                        }
                         });
                     }
                 }}
@@ -1658,20 +1630,6 @@ const NotePage = () => {
                             <Circle
                                 x={eraserCursor.x}
                                 y={eraserCursor.y}
-                                radius={10} // 지우개 크기의 절반
-                                stroke="#666"
-                                strokeWidth={2}
-                                dash={[5, 5]}
-                                listening={false}
-                                perfectDrawEnabled={false}
-                            />
-                        )}
-                        
-                        {/* 지우개 커서 표시 */}
-                        {tool === 'eraser' && eraserCursor.visible && (
-                            <Circle
-                                x={eraserCursor.x}
-                                y={eraserCursor.y}
                                 radius={10}
                                 stroke="#666"
                                 strokeWidth={2}
@@ -1687,13 +1645,22 @@ const NotePage = () => {
 
           <ContentEditable 
             ref={editorRef}
-            contentEditable={true}
+            contentEditable={settings.method === 'text'} // 손글씨 모드에서는 편집 불가
             $template={settings.template}
             $method={settings.method}
             placeholder={settings.method === 'handwriting' || settings.template === 'cornell' || settings.template === 'meeting' ? '' : "여기에 내용을 작성하세요..."}
             onMouseUp={saveSelection}
             onKeyUp={saveSelection}
-            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: settings.method === 'handwriting' ? 0 : 1 }}
+            style={{ 
+              position: 'absolute', 
+              top: 0, 
+              left: 0, 
+              width: '100%', 
+              height: '100%', 
+              zIndex: settings.method === 'handwriting' ? 0 : 1,
+              pointerEvents: settings.method === 'handwriting' ? 'none' : 'auto', // 손글씨 모드에서는 마우스 이벤트 무시
+              userSelect: settings.method === 'handwriting' ? 'none' : 'auto' // 손글씨 모드에서는 텍스트 선택 불가
+            }}
           />
         </div>
       </EditorContainer>

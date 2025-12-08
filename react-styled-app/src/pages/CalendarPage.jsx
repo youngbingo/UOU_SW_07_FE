@@ -449,6 +449,7 @@ const CalendarPage = () => {
         id: newNoteId,
         date: selectedDate,
         title: '새로운 노트',
+        updatedAt: new Date().toISOString(), // updatedAt 추가
         ...settings
     };
     
