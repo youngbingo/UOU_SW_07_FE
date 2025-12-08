@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import styled from 'styled-components';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { FaSave, FaArrowLeft, FaBold, FaItalic, FaUnderline, FaPalette, FaListUl, FaMinus, FaSmile, FaPen, FaEraser, FaTrash, FaHighlighter, FaUndo, FaRedo, FaShapes, FaHandPaper, FaImage, FaFilePdf } from 'react-icons/fa';
+import { FaSave, FaArrowLeft, FaBold, FaItalic, FaUnderline, FaPalette, FaListUl, FaMinus, FaSmile, FaPen, FaEraser, FaTrash, FaHighlighter, FaUndo, FaRedo, FaShapes, FaHandPaper, FaImage, FaFilePdf, FaSquare, FaCircle, FaPlay } from 'react-icons/fa';
 import EmojiPicker from 'emoji-picker-react';
-import { Stage, Layer, Line, Circle, Rect, Image as KonvaImage, Transformer } from 'react-konva';
+import { Stage, Layer, Line, Circle, Rect, Image as KonvaImage, Transformer, RegularPolygon } from 'react-konva';
 import useImage from 'use-image';
 import { Document, Page, pdfjs } from 'react-pdf';
 
@@ -255,6 +255,86 @@ const DrawingLayer = styled.div`
   pointer-events: ${({ $active }) => $active ? 'auto' : 'none'};
 `;
 
+const ShapeMenuWrapper = styled.div`
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 100;
+  margin-top: 8px;
+  background: ${({ theme }) => theme.colors.surface};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: 8px;
+  box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+  padding: 8px;
+  display: flex;
+  gap: 8px;
+`;
+
+// 개별 도형 컴포넌트 (선택 및 변형 가능)
+const EditableShape = ({ shapeProps, isSelected, onSelect, onChange }) => {
+  const shapeRef = useRef();
+  const trRef = useRef();
+
+  useEffect(() => {
+    if (isSelected && trRef.current && shapeRef.current) {
+      trRef.current.nodes([shapeRef.current]);
+      trRef.current.getLayer().batchDraw();
+    }
+  }, [isSelected]);
+
+  const commonProps = {
+    onClick: onSelect,
+    onTap: onSelect,
+    ref: shapeRef,
+    ...shapeProps,
+    draggable: true,
+    onDragEnd: (e) => {
+      onChange({
+        ...shapeProps,
+        x: e.target.x(),
+        y: e.target.y(),
+      });
+    },
+    onTransformEnd: (e) => {
+      const node = shapeRef.current;
+      const scaleX = node.scaleX();
+      const scaleY = node.scaleY();
+
+      node.scaleX(1);
+      node.scaleY(1);
+
+      onChange({
+        ...shapeProps,
+        x: node.x(),
+        y: node.y(),
+        width: Math.max(5, node.width() * scaleX),
+        height: Math.max(5, node.height() * scaleY),
+        radius: node.radius ? Math.max(5, node.radius() * scaleX) : undefined,
+      });
+    },
+  };
+
+  return (
+    <React.Fragment>
+      {shapeProps.type === 'rect' && <Rect {...commonProps} />}
+      {shapeProps.type === 'circle' && <Circle {...commonProps} />}
+      {shapeProps.type === 'triangle' && <RegularPolygon {...commonProps} sides={3} />}
+      
+      {isSelected && (
+        <Transformer
+          ref={trRef}
+          boundBoxFunc={(oldBox, newBox) => {
+            if (newBox.width < 5 || newBox.height < 5) {
+              return oldBox;
+            }
+            return newBox;
+          }}
+        />
+      )}
+    </React.Fragment>
+  );
+};
+
 // 이미지를 로드하는 컴포넌트
 const URLImage = ({ image, isSelected, onSelect, onChange }) => {
   const [img] = useImage(image.src);
@@ -406,8 +486,8 @@ const NotePage = () => {
   const [tool, setTool] = useState('pen'); // 'pen', 'eraser', 'highlighter', 'shape'
   const [lineWidth, setLineWidth] = useState(2);
   const [lines, setLines] = useState([]);
-  // 히스토리 구조 변경: { lines, images } 객체를 저장
-  const [history, setHistory] = useState([{ lines: [], images: [] }]);
+  // 히스토리 구조 변경: { lines, images, shapes } 객체를 저장
+  const [history, setHistory] = useState([{ lines: [], images: [], shapes: [] }]);
   const [historyStep, setHistoryStep] = useState(0);
   const isDrawing = useRef(false);
   const [isPenModeOnly, setIsPenModeOnly] = useState(false); // 팜 리젝션 (펜 전용 모드)
@@ -422,6 +502,11 @@ const NotePage = () => {
   const [numPages, setNumPages] = useState(null);
   const [pdfPageImages, setPdfPageImages] = useState([]); // 렌더링된 PDF 페이지 이미지들
   const pdfInputRef = useRef(null);
+
+  // 도형 삽입 관련 상태
+  const [shapes, setShapes] = useState([]); // 삽입된 도형들
+  const [selectedShapeId, setSelectedShapeId] = useState(null);
+  const [showShapeMenu, setShowShapeMenu] = useState(false);
 
   // 최적화: 현재 그리고 있는 선을 위한 Ref (리액트 렌더링 우회)
   const currentLineRef = useRef(null);
@@ -511,8 +596,10 @@ const NotePage = () => {
         setLines(parsed.drawingData);
         // 초기 로드 시 히스토리도 동기화
         const initialImages = parsed.images || [];
-        setHistory([{ lines: parsed.drawingData, images: initialImages }]);
+        const initialShapes = parsed.shapes || [];
+        setHistory([{ lines: parsed.drawingData, images: initialImages, shapes: initialShapes }]);
         setHistoryStep(0);
+        setShapes(initialShapes);
       }
       if (parsed.images) {
         setImages(parsed.images);
@@ -646,6 +733,7 @@ const NotePage = () => {
         category: category,
         drawingData: lines, // 드로잉 데이터 저장
         images: images, // 이미지 데이터 저장
+        shapes: shapes, // 도형 데이터 저장
         updatedAt: new Date().toISOString(),
         title: editorRef.current.innerText.split('\n')[0] || '제목 없음' 
       };
@@ -658,11 +746,12 @@ const NotePage = () => {
   };
 
   // 히스토리 저장 함수
-  const saveHistory = (newLines, newImages) => {
+  const saveHistory = (newLines, newImages, newShapes) => {
     const newHistory = history.slice(0, historyStep + 1);
     newHistory.push({ 
         lines: newLines !== undefined ? newLines : lines, 
-        images: newImages !== undefined ? newImages : images 
+        images: newImages !== undefined ? newImages : images,
+        shapes: newShapes !== undefined ? newShapes : shapes
     });
     setHistory(newHistory);
     setHistoryStep(newHistory.length - 1);
@@ -673,6 +762,7 @@ const NotePage = () => {
     const previous = history[historyStep - 1];
     setLines(previous.lines);
     setImages(previous.images);
+    setShapes(previous.shapes);
     setHistoryStep(historyStep - 1);
   };
 
@@ -681,6 +771,7 @@ const NotePage = () => {
     const next = history[historyStep + 1];
     setLines(next.lines);
     setImages(next.images);
+    setShapes(next.shapes);
     setHistoryStep(historyStep + 1);
   };
 
@@ -703,7 +794,7 @@ const NotePage = () => {
                 };
                 const newImages = [...images, newImage];
                 setImages(newImages);
-                saveHistory(lines, newImages);
+                saveHistory(lines, newImages, shapes);
             };
         } else {
             // 텍스트 모드: 에디터에 이미지 삽입
@@ -822,7 +913,7 @@ const NotePage = () => {
     setLines(newLines);
     
     // 히스토리 저장
-    saveHistory(newLines, images);
+    saveHistory(newLines, images, shapes);
     
     currentLineRef.current = null;
     // 상태 업데이트 후 레이어 다시 그리기
@@ -914,8 +1005,29 @@ const NotePage = () => {
                 onChange={handleImageUpload}
               />
 
-              <div style={{ width: '1px', height: '24px', background: '#ddd', margin: '0 4px' }}></div>
+              <ToolBtn 
+                onClick={() => setShowShapeMenu(!showShapeMenu)}
+                title="도형 삽입"
+                style={{ position: 'relative' }}
+              >
+                <FaSquare />
+                {showShapeMenu && (
+                    <ShapeMenuWrapper onClick={e => e.stopPropagation()}>
+                        <ToolBtn onClick={() => handleAddShape('rect')} title="사각형">
+                            <FaSquare />
+                        </ToolBtn>
+                        <ToolBtn onClick={() => handleAddShape('circle')} title="원">
+                            <FaCircle />
+                        </ToolBtn>
+                        <ToolBtn onClick={() => handleAddShape('triangle')} title="삼각형">
+                            <FaPlay style={{ transform: 'rotate(-90deg)' }} />
+                        </ToolBtn>
+                    </ShapeMenuWrapper>
+                )}
+              </ToolBtn>
 
+              <div style={{ width: '1px', height: '24px', background: '#ddd', margin: '0 4px' }}></div>
+              
               <ToolBtn onClick={handleUndo} title="실행 취소">
                 <FaUndo />
               </ToolBtn>
@@ -1167,13 +1279,34 @@ const NotePage = () => {
                                 key={img.id}
                                 image={img}
                                 isSelected={img.id === selectedImageId}
-                                onSelect={() => setSelectedImageId(img.id)}
+                                onSelect={() => {
+                                    setSelectedImageId(img.id);
+                                    setSelectedShapeId(null);
+                                }}
                                 onChange={(newAttrs) => {
                                     const newImages = images.slice();
                                     newImages[i] = newAttrs;
                                     setImages(newImages);
                                     // 드래그/변형 종료 시 히스토리 저장
-                                    saveHistory(lines, newImages);
+                                    saveHistory(lines, newImages, shapes);
+                                }}
+                            />
+                        ))}
+                        {/* 삽입된 도형들 */}
+                        {shapes.map((shape, i) => (
+                            <EditableShape
+                                key={shape.id}
+                                shapeProps={shape}
+                                isSelected={shape.id === selectedShapeId}
+                                onSelect={() => {
+                                    setSelectedShapeId(shape.id);
+                                    setSelectedImageId(null);
+                                }}
+                                onChange={(newAttrs) => {
+                                    const newShapes = shapes.slice();
+                                    newShapes[i] = newAttrs;
+                                    setShapes(newShapes);
+                                    saveHistory(lines, images, newShapes);
                                 }}
                             />
                         ))}
