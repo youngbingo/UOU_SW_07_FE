@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import styled from 'styled-components';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { FaSave, FaArrowLeft, FaBold, FaItalic, FaUnderline, FaPalette, FaListUl, FaMinus, FaSmile, FaPen, FaEraser, FaTrash } from 'react-icons/fa';
+import { FaSave, FaArrowLeft, FaBold, FaItalic, FaUnderline, FaPalette, FaListUl, FaMinus, FaSmile, FaPen, FaEraser, FaTrash, FaHighlighter, FaUndo, FaRedo, FaShapes, FaHandPaper } from 'react-icons/fa';
 import EmojiPicker from 'emoji-picker-react';
-import { Stage, Layer, Line } from 'react-konva';
+import { Stage, Layer, Line, Circle, Rect } from 'react-konva';
 
 const PageContainer = styled.div`
   display: flex;
@@ -135,6 +135,47 @@ const ColorInput = styled.input`
   margin-left: 5px;
   cursor: pointer;
   background: none;
+  border-radius: 50%;
+  overflow: hidden;
+  
+  &::-webkit-color-swatch-wrapper {
+    padding: 0;
+  }
+  &::-webkit-color-swatch {
+    border: none;
+    border-radius: 50%;
+    border: 1px solid rgba(0,0,0,0.1);
+  }
+`;
+
+const ColorBtn = styled.button`
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid ${({ $active, theme }) => $active ? theme.colors.primary : 'transparent'};
+  background-color: ${({ color }) => color};
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  transition: transform 0.1s;
+  padding: 0;
+  position: relative;
+
+  &:hover {
+    transform: scale(1.1);
+    z-index: 1;
+  }
+
+  &::after {
+    content: '';
+    display: ${({ $active }) => $active ? 'block' : 'none'};
+    position: absolute;
+    top: -4px;
+    left: -4px;
+    right: -4px;
+    bottom: -4px;
+    border-radius: 50%;
+    border: 2px solid ${({ theme }) => theme.colors.primary};
+  }
 `;
 
 const FontSizeInput = styled.input`
@@ -214,15 +255,100 @@ const NotePage = () => {
   
   // 상태
   const [color, setColor] = useState('#000000');
+  // 도구별 색상/두께 기억
+  const [penColor, setPenColor] = useState('#000000');
+  const [highlighterColor, setHighlighterColor] = useState('#FFEB3B');
+  const [penWidth, setPenWidth] = useState(2);
+  const [highlighterWidth, setHighlighterWidth] = useState(15);
+  
   const [fontSize, setFontSize] = useState('16');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [category, setCategory] = useState('전공필수');
   const [settings, setSettings] = useState(location.state || { method: 'text', template: 'blank' });
 
   // 드로잉 관련 상태
-  const [tool, setTool] = useState('pen'); // 'pen' or 'eraser'
+  const [tool, setTool] = useState('pen'); // 'pen', 'eraser', 'highlighter', 'shape'
+  const [lineWidth, setLineWidth] = useState(2);
   const [lines, setLines] = useState([]);
+  const [history, setHistory] = useState([[]]);
+  const [historyStep, setHistoryStep] = useState(0);
   const isDrawing = useRef(false);
+  const [isPenModeOnly, setIsPenModeOnly] = useState(false); // 팜 리젝션 (펜 전용 모드)
+  
+  // 최적화: 현재 그리고 있는 선을 위한 Ref (리액트 렌더링 우회)
+  const currentLineRef = useRef(null);
+  const layerRef = useRef(null);
+
+  // 도구 변경 핸들러
+  const changeTool = (newTool) => {
+    setTool(newTool);
+    if (newTool === 'pen' || newTool === 'shape') {
+        setColor(penColor);
+        setLineWidth(penWidth);
+    } else if (newTool === 'highlighter') {
+        setColor(highlighterColor);
+        setLineWidth(highlighterWidth);
+    } 
+    // 지우개는 색상/두께 변경 없음 (지우개 고정 두께 사용 시)
+  };
+
+  // 색상 변경 핸들러
+  const handleColorChange = (newColor) => {
+    setColor(newColor);
+    if (tool === 'pen' || tool === 'shape') setPenColor(newColor);
+    if (tool === 'highlighter') setHighlighterColor(newColor);
+    
+    // 텍스트 모드일 때도 적용
+    if (settings.method === 'text') {
+        restoreSelection();
+        document.execCommand('foreColor', false, newColor);
+    }
+  };
+
+  // 두께 변경 핸들러
+  const handleWidthChange = (newWidth) => {
+    const width = parseInt(newWidth);
+    setLineWidth(width);
+    if (tool === 'pen' || tool === 'shape') setPenWidth(width);
+    if (tool === 'highlighter') setHighlighterWidth(width);
+  };
+
+  // 도형 인식 함수
+  const recognizeShape = (points) => {
+    if (points.length < 10) return null; // 점이 너무 적으면 무시
+
+    const start = { x: points[0], y: points[1] };
+    const end = { x: points[points.length - 2], y: points[points.length - 1] };
+    
+    // 1. 닫힌 도형인지 확인 (시작점과 끝점의 거리)
+    const distance = Math.sqrt(Math.pow(end.x - start.x, 2) + Math.pow(end.y - start.y, 2));
+    const isClosed = distance < 50;
+
+    // x, y 좌표 분리
+    const xPoints = points.filter((_, i) => i % 2 === 0);
+    const yPoints = points.filter((_, i) => i % 2 === 1);
+    
+    const minX = Math.min(...xPoints);
+    const maxX = Math.max(...xPoints);
+    const minY = Math.min(...yPoints);
+    const maxY = Math.max(...yPoints);
+    const width = maxX - minX;
+    const height = maxY - minY;
+
+    if (isClosed) {
+        // 원 vs 사각형 구분 (단순화: 가로세로 비율이 비슷하면 원으로 간주)
+        // 더 정교하게 하려면 면적 비율 등을 계산해야 함
+        const ratio = width / height;
+        if (ratio > 0.8 && ratio < 1.2) {
+            return { type: 'circle', x: minX + width/2, y: minY + height/2, radius: Math.max(width, height)/2 };
+        } else {
+            return { type: 'rect', x: minX, y: minY, width, height };
+        }
+    } else {
+        // 직선 인식 (간단히 시작점과 끝점 연결)
+        return { type: 'line', points: [start.x, start.y, end.x, end.y] };
+    }
+  };
 
   useEffect(() => {
     const savedNote = localStorage.getItem(`note_${date}`);
@@ -233,7 +359,11 @@ const NotePage = () => {
       }
       setSettings({ method: parsed.method, template: parsed.template });
       if (parsed.category) setCategory(parsed.category);
-      if (parsed.drawingData) setLines(parsed.drawingData);
+      if (parsed.drawingData) {
+        setLines(parsed.drawingData);
+        setHistory([parsed.drawingData]);
+        setHistoryStep(0);
+      }
     } else {
         // ... (초기 템플릿 로직 생략)
         if (editorRef.current && editorRef.current.innerHTML === "") {
@@ -356,28 +486,96 @@ const NotePage = () => {
     navigate('/');
   };
 
+  const handleUndo = () => {
+    if (historyStep === 0) return;
+    const previous = history[historyStep - 1];
+    setLines(previous);
+    setHistoryStep(historyStep - 1);
+  };
+
+  const handleRedo = () => {
+    if (historyStep === history.length - 1) return;
+    const next = history[historyStep + 1];
+    setLines(next);
+    setHistoryStep(historyStep + 1);
+  };
+
   // 드로잉 이벤트 핸들러
   const handleMouseDown = (e) => {
+    // 팜 리젝션 (펜 전용 모드)
+    if (isPenModeOnly && e.evt.pointerType !== 'pen') return;
+
     isDrawing.current = true;
     const pos = e.target.getStage().getPointerPosition();
-    setLines([...lines, { tool, points: [pos.x, pos.y], color: color, strokeWidth: tool === 'eraser' ? 20 : 2 }]);
+    
+    let currentWidth = lineWidth;
+    if (tool === 'eraser') currentWidth = 20;
+
+    // 현재 그리는 선 정보 초기화 (Ref에 저장)
+    currentLineRef.current = {
+      tool,
+      points: [pos.x, pos.y],
+      color: color,
+      strokeWidth: currentWidth,
+      opacity: tool === 'highlighter' ? 0.5 : 1,
+      shapeType: null
+    };
   };
 
   const handleMouseMove = (e) => {
-    if (!isDrawing.current) return;
+    if (!isDrawing.current || !currentLineRef.current) return;
+    // 팜 리젝션 체크 (그리는 중에도 터치 무시)
+    if (isPenModeOnly && e.evt.pointerType !== 'pen') return;
+
     const stage = e.target.getStage();
     const point = stage.getPointerPosition();
-    let lastLine = lines[lines.length - 1];
-    // add point
-    lastLine.points = lastLine.points.concat([point.x, point.y]);
-
-    // replace last
-    lines.splice(lines.length - 1, 1, lastLine);
-    setLines(lines.concat());
+    
+    // Ref의 포인트 업데이트 (상태 업데이트 X -> 렌더링 X)
+    currentLineRef.current.points = currentLineRef.current.points.concat([point.x, point.y]);
+    
+    // Konva 레이어만 직접 다시 그리기 (batchDraw가 최적화됨)
+    if (layerRef.current) {
+        layerRef.current.batchDraw();
+    }
   };
 
-  const handleMouseUp = () => {
+  const handleMouseUp = (e) => {
+    if (!isDrawing.current || !currentLineRef.current) return;
+    if (isPenModeOnly && e.evt.pointerType !== 'pen') {
+        isDrawing.current = false;
+        currentLineRef.current = null;
+        if (layerRef.current) layerRef.current.batchDraw();
+        return;
+    }
+
     isDrawing.current = false;
+    let newLine = { ...currentLineRef.current };
+    
+    // 도형 보정 로직
+    if (tool === 'shape') {
+        const shape = recognizeShape(newLine.points);
+        if (shape) {
+            newLine = {
+                ...newLine,
+                tool: 'shape_result', 
+                shapeData: shape,
+                points: [] 
+            };
+        }
+    }
+
+    // 최종적으로 리액트 상태에 반영
+    const newLines = lines.concat(newLine);
+    setLines(newLines);
+    
+    const newHistory = history.slice(0, historyStep + 1);
+    newHistory.push(newLines);
+    setHistory(newHistory);
+    setHistoryStep(newHistory.length - 1);
+    
+    currentLineRef.current = null;
+    // 상태 업데이트 후 레이어 다시 그리기
+    if (layerRef.current) layerRef.current.batchDraw();
   };
 
   return (
@@ -412,23 +610,62 @@ const NotePage = () => {
             <>
               <ToolBtn 
                 $active={tool === 'pen'} 
-                onClick={() => setTool('pen')}
+                onClick={() => changeTool('pen')}
                 title="펜"
               >
                 <FaPen />
               </ToolBtn>
               <ToolBtn 
+                $active={tool === 'highlighter'} 
+                onClick={() => changeTool('highlighter')}
+                title="형광펜"
+              >
+                <FaHighlighter />
+              </ToolBtn>
+              <ToolBtn 
                 $active={tool === 'eraser'} 
-                onClick={() => setTool('eraser')}
+                onClick={() => changeTool('eraser')}
                 title="지우개"
               >
                 <FaEraser />
               </ToolBtn>
 
               <ToolBtn 
+                $active={tool === 'shape'} 
+                onClick={() => changeTool('shape')}
+                title="도형 보정 펜"
+              >
+                <FaShapes />
+              </ToolBtn>
+
+              <div style={{ width: '1px', height: '24px', background: '#ddd', margin: '0 4px' }}></div>
+
+              <ToolBtn 
+                $active={isPenModeOnly}
+                onClick={() => setIsPenModeOnly(!isPenModeOnly)}
+                title={isPenModeOnly ? "펜 전용 모드 ON (터치 무시)" : "펜 전용 모드 OFF"}
+                style={{ color: isPenModeOnly ? '#4A90E2' : 'inherit' }}
+              >
+                <FaHandPaper />
+              </ToolBtn>
+
+              <div style={{ width: '1px', height: '24px', background: '#ddd', margin: '0 4px' }}></div>
+
+              <ToolBtn onClick={handleUndo} title="실행 취소">
+                <FaUndo />
+              </ToolBtn>
+              <ToolBtn onClick={handleRedo} title="다시 실행">
+                <FaRedo />
+              </ToolBtn>
+
+              <div style={{ width: '1px', height: '24px', background: '#ddd', margin: '0 4px' }}></div>
+
+              <ToolBtn 
                 onClick={() => {
                     if(window.confirm('모든 필기 내용을 지우시겠습니까?')) {
                         setLines([]);
+                        setHistory([[]]);
+                        setHistoryStep(0);
                     }
                 }}
                 title="전체 지우기"
@@ -438,17 +675,54 @@ const NotePage = () => {
               
               <div style={{ width: '1px', height: '24px', background: '#ddd', margin: '0 4px' }}></div>
               
-              <ColorPickerWrapper>
-                <FaPalette color={color} />
-                <ColorInput 
-                  type="color" 
-                  value={color} 
-                  onChange={(e) => {
-                    setColor(e.target.value);
-                  }} 
-                  title="펜 색상"
+              {/* 색상 팔레트 (지우개가 아닐 때만 표시) */}
+              {tool !== 'eraser' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {(tool === 'highlighter' ? ['#FFEB3B', '#4CD964', '#FF2D55'] : ['#000000', '#FF3B30', '#007AFF']).map((preset) => (
+                        <ColorBtn 
+                            key={preset}
+                            color={preset}
+                            $active={color === preset}
+                            onClick={() => handleColorChange(preset)}
+                            title={preset}
+                        />
+                    ))}
+                    <div style={{position: 'relative', width: '28px', height: '28px'}}>
+                        <ColorInput 
+                            type="color" 
+                            value={color} 
+                            onChange={(e) => handleColorChange(e.target.value)} 
+                            title="사용자 지정 색상"
+                            style={{ width: '100%', height: '100%', marginLeft: 0 }}
+                        />
+                        {/* 프리셋에 없는 색상이 선택되었을 때만 강조 테두리 */}
+                        {!(tool === 'highlighter' ? ['#FFEB3B', '#4CD964', '#FF2D55'] : ['#000000', '#FF3B30', '#007AFF']).includes(color) && (
+                            <div style={{
+                                position: 'absolute', 
+                                top: '-4px', left: '-4px', right: '-4px', bottom: '-4px', 
+                                border: `2px solid #4A90E2`, 
+                                borderRadius: '50%',
+                                pointerEvents: 'none'
+                            }}></div>
+                        )}
+                    </div>
+                  </div>
+              )}
+
+              {tool !== 'eraser' && <div style={{ width: '1px', height: '24px', background: '#ddd', margin: '0 4px' }}></div>}
+              
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <span style={{ fontSize: '12px', color: '#666' }}>두께:</span>
+                <input 
+                    type="range" 
+                    min="1" 
+                    max="40" 
+                    value={lineWidth} 
+                    onChange={(e) => handleWidthChange(e.target.value)}
+                    style={{ width: '60px' }}
+                    title="펜 두께"
                 />
-              </ColorPickerWrapper>
+              </div>
             </>
           ) : (
             /* 텍스트 모드일 때 */
@@ -530,11 +804,7 @@ const NotePage = () => {
                 <ColorInput 
                   type="color" 
                   value={color} 
-                  onChange={(e) => {
-                    setColor(e.target.value);
-                    restoreSelection();
-                    document.execCommand('foreColor', false, e.target.value);
-                  }} 
+                  onChange={(e) => handleColorChange(e.target.value)} 
                   title="글자 색상"
                 />
               </ColorPickerWrapper>
@@ -556,21 +826,93 @@ const NotePage = () => {
                       onTouchMove={handleMouseMove}
                       onTouchEnd={handleMouseUp}
                   >
-                      <Layer>
-                          {lines.map((line, i) => (
-                              <Line
-                                  key={i}
-                                  points={line.points}
-                                  stroke={line.tool === 'eraser' ? '#ffffff' : line.color} // 지우개는 배경색으로 덮어쓰기 (간단 구현)
-                                  strokeWidth={line.strokeWidth}
-                                  tension={0.5}
-                                  lineCap="round"
-                                  lineJoin="round"
-                                  globalCompositeOperation={
-                                      line.tool === 'eraser' ? 'destination-out' : 'source-over'
-                                  }
-                              />
-                          ))}
+                      <Layer ref={layerRef}>
+                        {lines.map((line, i) => {
+                            if (line.tool === 'shape_result' && line.shapeData) {
+                                // 보정된 도형 렌더링
+                                const { shapeData, color, strokeWidth, opacity } = line;
+                                if (shapeData.type === 'circle') {
+                                    return (
+                                        <Circle
+                                            key={i}
+                                            x={shapeData.x}
+                                            y={shapeData.y}
+                                            radius={shapeData.radius}
+                                            stroke={color}
+                                            strokeWidth={strokeWidth}
+                                            opacity={opacity}
+                                            perfectDrawEnabled={false}
+                                            listening={false}
+                                        />
+                                    );
+                                } else if (shapeData.type === 'rect') {
+                                    return (
+                                        <Rect
+                                            key={i}
+                                            x={shapeData.x}
+                                            y={shapeData.y}
+                                            width={shapeData.width}
+                                            height={shapeData.height}
+                                            stroke={color}
+                                            strokeWidth={strokeWidth}
+                                            opacity={opacity}
+                                            perfectDrawEnabled={false}
+                                            listening={false}
+                                        />
+                                    );
+                                } else if (shapeData.type === 'line') {
+                                     return (
+                                        <Line
+                                            key={i}
+                                            points={shapeData.points}
+                                            stroke={color}
+                                            strokeWidth={strokeWidth}
+                                            tension={0}
+                                            lineCap="round"
+                                            lineJoin="round"
+                                            opacity={opacity}
+                                            perfectDrawEnabled={false}
+                                            listening={false}
+                                        />
+                                    );
+                                }
+                            }
+
+                            return (
+                                <Line
+                                    key={i}
+                                    points={line.points}
+                                    stroke={line.tool === 'eraser' ? '#ffffff' : line.color} 
+                                    strokeWidth={line.strokeWidth}
+                                    tension={0.5}
+                                    lineCap="round"
+                                    lineJoin="round"
+                                    opacity={line.opacity || 1}
+                                    globalCompositeOperation={
+                                        line.tool === 'eraser' ? 'destination-out' : 'source-over'
+                                    }
+                                    perfectDrawEnabled={false} // 성능 최적화: 히트 감지용 버퍼 그리기 생략
+                                    listening={false} // 성능 최적화: 이벤트 감지 끄기
+                                />
+                            );
+                        })}
+                        {/* 현재 그리고 있는 선 (임시 렌더링) */}
+                        {currentLineRef.current && (
+                             <Line
+                                points={currentLineRef.current.points}
+                                stroke={currentLineRef.current.tool === 'eraser' ? '#ffffff' : currentLineRef.current.color}
+                                strokeWidth={currentLineRef.current.strokeWidth}
+                                tension={0.5}
+                                lineCap="round"
+                                lineJoin="round"
+                                opacity={currentLineRef.current.opacity || 1}
+                                globalCompositeOperation={
+                                    currentLineRef.current.tool === 'eraser' ? 'destination-out' : 'source-over'
+                                }
+                                perfectDrawEnabled={false} // 최적화
+                                listening={false}
+                            />
+                        )}
                       </Layer>
                   </Stage>
               </DrawingLayer>
