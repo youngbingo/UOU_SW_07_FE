@@ -1,7 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import { useParams, useNavigate } from 'react-router-dom';
-import { FaUsers, FaFileAlt, FaPlus, FaClock, FaEllipsisH } from 'react-icons/fa';
+import { FaUsers, FaFileAlt, FaPlus, FaClock, FaUser } from 'react-icons/fa';
+import { subscribeToTeam, subscribeToTeamDocs, createTeamDoc } from '../utils/storage';
+import AlertModal from '../components/AlertModal';
+import PromptModal from '../components/PromptModal';
 
 const PageContainer = styled.div`
   display: flex;
@@ -134,113 +137,96 @@ const MemberAvatar = styled.div`
   }
 `;
 
-const ActivityList = styled.div`
-  background: ${({ theme }) => theme.colors.surface};
-  border-radius: ${({ theme }) => theme.borderRadius.medium};
-  padding: ${({ theme }) => theme.spacing.medium};
-  box-shadow: ${({ theme }) => theme.shadows.small};
-`;
-
-const ActivityItem = styled.div`
-  display: flex;
-  gap: 12px;
-  padding: 12px 0;
-  border-bottom: 1px solid ${({ theme }) => theme.colors.border};
-
-  &:last-child {
-    border-bottom: none;
-  }
-`;
-
-const ActivityIcon = styled.div`
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: ${({ theme }) => theme.colors.gray};
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: ${({ theme }) => theme.colors.primary};
-`;
-
-const ActivityContent = styled.div`
-  flex: 1;
-`;
-
-const ActivityText = styled.p`
-  font-size: 14px;
-  color: ${({ theme }) => theme.colors.text};
-  margin-bottom: 4px;
-  
-  strong {
-    font-weight: 600;
-  }
-`;
-
-const ActivityTime = styled.span`
-  font-size: 12px;
-  color: ${({ theme }) => theme.colors.textSecondary};
-`;
-
-const DummyBadge = styled.span`
-  font-size: 12px;
-  background-color: ${({ theme }) => theme.colors.gray};
-  color: ${({ theme }) => theme.colors.textSecondary};
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-weight: normal;
-  margin-left: 8px;
-  vertical-align: middle;
-`;
-
 const TeamSpacePage = () => {
   const { teamId } = useParams();
   const navigate = useNavigate();
   
-  // 더미 데이터
-  const teamName = teamId === 'capstone' ? '🎓 캡스톤 디자인 A조' : 
-                   teamId === 'hackathon' ? '🚀 해커톤 불꽃코딩' : '팀 스페이스';
-  
-  const members = [
-    { id: 1, name: '나', color: '#4A90E2' },
-    { id: 2, name: '김철수', color: '#F5A623' },
-    { id: 3, name: '이영희', color: '#2ECC71' },
-    { id: 4, name: '박지민', color: '#E74C3C' },
-  ];
+  const [teamData, setTeamData] = useState(null);
+  const [docs, setDocs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [alertState, setAlertState] = useState({ isOpen: false, title: '', message: '' });
+  const [promptState, setPromptState] = useState({ isOpen: false, title: '', placeholder: '', onConfirm: () => {} });
 
-  const docs = [
-    { id: 1, title: '기획안 v1.0', date: '2025-10-06', author: '김철수' },
-    { id: 2, title: 'API 명세서', date: '2025-10-05', author: '이영희' },
-    { id: 3, title: '회의록 (10/04)', date: '2025-10-04', author: '나' },
-    { id: 4, title: '발표 자료 초안', date: '2025-10-03', author: '박지민' },
-  ];
+  useEffect(() => {
+    if (!teamId) return;
 
-  const activities = [
-    { id: 1, user: '김철수', action: '기획안 v1.0 문서를 수정했습니다.', time: '10분 전' },
-    { id: 2, user: '이영희', action: 'API 명세서에 댓글을 남겼습니다.', time: '1시간 전' },
-    { id: 3, user: '박지민', action: '새로운 문서 "디자인 가이드"를 생성했습니다.', time: '3시간 전' },
-  ];
+    setLoading(true);
+    // 1. 팀 정보 구독
+    const unsubscribeTeam = subscribeToTeam(teamId, (data) => {
+        setTeamData(data);
+    });
+
+    // 2. 팀 문서 구독
+    const unsubscribeDocs = subscribeToTeamDocs(teamId, (data) => {
+        setDocs(data);
+        setLoading(false);
+    });
+
+    return () => {
+        unsubscribeTeam();
+        unsubscribeDocs();
+    };
+  }, [teamId]);
+
+  const handleCreateDoc = () => {
+    setPromptState({
+        isOpen: true,
+        title: "새 문서 만들기",
+        placeholder: "문서 제목을 입력하세요",
+        onConfirm: async (title) => {
+            try {
+                await createTeamDoc(teamId, title);
+            } catch (e) {
+                setAlertState({
+                    isOpen: true,
+                    title: "오류",
+                    message: "문서 생성에 실패했습니다. (권한이 없거나 로그인이 필요합니다)"
+                });
+            }
+        }
+    });
+  };
+
+  const copyInviteLink = () => {
+    navigator.clipboard.writeText(teamId);
+    setAlertState({
+        isOpen: true,
+        title: "초대 코드 복사 완료",
+        message: `팀 코드(${teamId})가 복사되었습니다! 팀원에게 공유하세요.`
+    });
+  };
+
+  if (loading && !teamData) {
+      return <PageContainer><div style={{padding: 20}}>Loading...</div></PageContainer>;
+  }
+
+  if (!teamData) {
+      return <PageContainer><div style={{padding: 20}}>팀을 찾을 수 없습니다.</div></PageContainer>;
+  }
 
   return (
     <PageContainer>
       <Header>
         <TeamInfo>
           <TeamName>
-            {teamName} <DummyBadge>DUMMY</DummyBadge>
+            {teamData.name}
           </TeamName>
           <TeamMeta>
-            <FaUsers /> 멤버 {members.length}명 · <FaClock /> 최근 활동: 오늘
+            <FaUsers /> 멤버 {teamData.members ? teamData.members.length : 0}명
           </TeamMeta>
         </TeamInfo>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <MemberList>
-                {members.map(m => (
-                    <MemberAvatar key={m.id} $color={m.color} title={m.name}>
-                        {m.name[0]}
+                {teamData.members && teamData.members.slice(0, 5).map((uid, index) => (
+                    <MemberAvatar key={uid} $color={['#4A90E2', '#F5A623', '#2ECC71'][index % 3]} title={uid}>
+                        <FaUser size={12}/>
                     </MemberAvatar>
                 ))}
+                {teamData.members && teamData.members.length > 5 && (
+                    <MemberAvatar $color="#999">+{teamData.members.length - 5}</MemberAvatar>
+                )}
             </MemberList>
-            <InviteButton onClick={() => alert('초대 링크가 복사되었습니다!')}>
+            <InviteButton onClick={copyInviteLink}>
                 <FaPlus /> 초대
             </InviteButton>
         </div>
@@ -248,17 +234,17 @@ const TeamSpacePage = () => {
 
       <Section>
         <SectionTitle>
-          <span>공유 문서 <DummyBadge>DUMMY</DummyBadge></span>
+          <span>공유 문서</span>
           <button 
             style={{ background: 'none', border: 'none', color: '#4A90E2', cursor: 'pointer', fontSize: '14px' }}
-            onClick={() => navigate('/note/new', { state: { method: 'text', template: 'meeting' } })}
+            onClick={handleCreateDoc}
           >
             + 새 문서 만들기
           </button>
         </SectionTitle>
         <CardGrid>
           {docs.map(doc => (
-            <DocCard key={doc.id} onClick={() => navigate(`/note/${doc.date}`)}>
+            <DocCard key={doc.id} onClick={() => navigate(`/note/${doc.id}?teamId=${teamId}`)}>
               <FaFileAlt size={24} color="#4A90E2" style={{ marginBottom: '12px' }} />
               <DocTitle>{doc.title}</DocTitle>
               <DocMeta>
@@ -269,7 +255,7 @@ const TeamSpacePage = () => {
           ))}
           <DocCard 
             style={{ border: '2px dashed #ddd', background: 'transparent', justifyContent: 'center', alignItems: 'center', color: '#888' }}
-            onClick={() => navigate('/note/new')}
+            onClick={handleCreateDoc}
           >
             <FaPlus size={24} />
             <span style={{ marginTop: '8px' }}>새 문서</span>
@@ -278,23 +264,26 @@ const TeamSpacePage = () => {
       </Section>
 
       <Section>
-        <SectionTitle>최근 활동 <DummyBadge>DUMMY</DummyBadge></SectionTitle>
-        <ActivityList>
-          {activities.map(activity => (
-            <ActivityItem key={activity.id}>
-              <ActivityIcon>
-                <FaClock size={14} />
-              </ActivityIcon>
-              <ActivityContent>
-                <ActivityText>
-                  <strong>{activity.user}</strong>님이 {activity.action}
-                </ActivityText>
-                <ActivityTime>{activity.time}</ActivityTime>
-              </ActivityContent>
-            </ActivityItem>
-          ))}
-        </ActivityList>
+        <SectionTitle>최근 활동</SectionTitle>
+        <div style={{ padding: '20px', textAlign: 'center', color: '#999', background: '#f9f9f9', borderRadius: '8px' }}>
+            활동 로그 기능은 준비 중입니다.
+        </div>
       </Section>
+
+      <AlertModal 
+        isOpen={alertState.isOpen}
+        onClose={() => setAlertState({ ...alertState, isOpen: false })}
+        title={alertState.title}
+        message={alertState.message}
+      />
+      
+      <PromptModal
+        isOpen={promptState.isOpen}
+        onClose={() => setPromptState({ ...promptState, isOpen: false })}
+        onConfirm={promptState.onConfirm}
+        title={promptState.title}
+        placeholder={promptState.placeholder}
+      />
     </PageContainer>
   );
 };

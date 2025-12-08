@@ -1,11 +1,7 @@
 import { createGlobalStyle } from 'styled-components';
 
 const GlobalStyle = createGlobalStyle`
-  /* Pretendard (CDN) */
-  @import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.8/dist/web/static/pretendard.css");
-  
-  /* Inter (Google Fonts) */
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  /* 폰트는 index.html에서 link 태그로 로드합니다. */
 
   *, *::before, *::after {
     box-sizing: border-box;

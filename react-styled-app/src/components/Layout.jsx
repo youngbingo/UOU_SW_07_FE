@@ -1,8 +1,13 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import styled from 'styled-components';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { FaBars, FaSearch, FaCog, FaBell, FaChevronDown, FaChevronUp, FaQuestionCircle, FaMoon, FaSun, FaUsers, FaPlus } from 'react-icons/fa';
+import { FaBars, FaSearch, FaCog, FaBell, FaChevronDown, FaChevronUp, FaQuestionCircle, FaMoon, FaSun, FaUsers, FaPlus, FaUser, FaSignOutAlt } from 'react-icons/fa';
 import { ThemeContext } from '../App';
+import { useAuth } from '../context/AuthContext';
+import LoginModal from './LoginModal';
+import AlertModal from './AlertModal';
+import SyncStatusIndicator from './SyncStatusIndicator'; // 추가
+import { getUserTeams } from '../utils/storage';
 
 const Container = styled.div`
   display: flex;
@@ -188,13 +193,47 @@ const Main = styled.main`
 const Layout = () => {
   const navigate = useNavigate();
   const { themeMode, toggleTheme } = useContext(ThemeContext);
+  const { currentUser, logout } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [expandedMenu, setExpandedMenu] = useState({}); // { subjects: true, projects: false, team: false }
+  const [expandedMenu, setExpandedMenu] = useState({});
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [subjects, setSubjects] = useState([]);
+  const [myTeams, setMyTeams] = useState([]);
+  const [alertState, setAlertState] = useState({ isOpen: false, title: '', message: '' });
 
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
   const toggleSearch = () => setIsSearchOpen(!isSearchOpen);
   
+  // 사이드바 열릴 때 시간표 과목 및 팀 목록 로드
+  useEffect(() => {
+    if (isSidebarOpen) {
+        // 시간표 과목 로드
+        const savedTimetable = localStorage.getItem('timetable');
+        if (savedTimetable) {
+            try {
+                const parsed = JSON.parse(savedTimetable);
+                // 과목명 추출 및 중복 제거
+                const uniqueSubjects = [...new Set(parsed.map(item => item.name))].filter(Boolean);
+                setSubjects(uniqueSubjects);
+            } catch (e) {
+                console.error('Failed to load timetable subjects', e);
+            }
+        } else {
+            setSubjects([]);
+        }
+
+        // 팀 목록 로드 (로그인 시)
+        if (currentUser) {
+            const fetchTeams = async () => {
+                const teams = await getUserTeams();
+                setMyTeams(teams);
+            };
+            fetchTeams();
+        }
+    }
+  }, [isSidebarOpen, currentUser]);
+
   const toggleMenu = (menu) => {
     setExpandedMenu(prev => ({ ...prev, [menu]: !prev[menu] }));
   };
@@ -206,6 +245,20 @@ const Layout = () => {
     }
   };
 
+  const handleLogout = async () => {
+    try {
+        await logout();
+        // 로그아웃 후 로컬 데이터 정리? (선택사항)
+        // alert('로그아웃 되었습니다.');
+    } catch (error) {
+        console.error('Logout failed', error);
+    }
+  };
+
+  const showAlert = (message) => {
+    setAlertState({ isOpen: true, title: '알림', message });
+  };
+
   return (
     <Container>
       <Header>
@@ -213,7 +266,7 @@ const Layout = () => {
           <IconBtn onClick={toggleSidebar}>
             <FaBars />
           </IconBtn>
-          <Logo onClick={() => navigate('/')}>My Uni Planner</Logo>
+          <Logo onClick={() => navigate('/')}>D.note</Logo>
         </HeaderLeft>
         <HeaderRight>
           <SearchInput 
@@ -224,11 +277,30 @@ const Layout = () => {
           <IconBtn onClick={toggleSearch}>
             <FaSearch />
           </IconBtn>
-          <IconBtn>
-            <FaBell />
-          </IconBtn>
+          
+          {currentUser ? (
+              <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+                <span style={{fontSize: '12px', fontWeight: 'bold'}}>{currentUser.displayName || currentUser.email.split('@')[0]}님</span>
+                <IconBtn onClick={handleLogout} title="로그아웃">
+                    <FaSignOutAlt />
+                </IconBtn>
+              </div>
+          ) : (
+              <IconBtn onClick={() => setIsLoginModalOpen(true)} title="로그인">
+                <FaUser />
+              </IconBtn>
+          )}
+
         </HeaderRight>
       </Header>
+
+      {isLoginModalOpen && <LoginModal onClose={() => setIsLoginModalOpen(false)} />}
+      <AlertModal 
+        isOpen={alertState.isOpen}
+        onClose={() => setAlertState({ ...alertState, isOpen: false })}
+        title={alertState.title}
+        message={alertState.message}
+      />
 
       <SidebarOverlay $isOpen={isSidebarOpen} onClick={toggleSidebar} />
       <Sidebar $isOpen={isSidebarOpen}>
@@ -247,10 +319,15 @@ const Layout = () => {
             {expandedMenu.subjects ? <FaChevronUp size={12} /> : <FaChevronDown size={12} />}
           </MenuItem>
           <SubMenu $isOpen={expandedMenu.subjects}>
-            <SubMenuItem onClick={() => { navigate('/notes?tag=알고리즘'); toggleSidebar(); }}>알고리즘</SubMenuItem>
-            <SubMenuItem onClick={() => { navigate('/notes?tag=데이터베이스'); toggleSidebar(); }}>데이터베이스</SubMenuItem>
-            <SubMenuItem onClick={() => { navigate('/notes?tag=운영체제'); toggleSidebar(); }}>운영체제</SubMenuItem>
-            <SubMenuItem onClick={() => { navigate('/notes?tag=웹프로그래밍'); toggleSidebar(); }}>웹프로그래밍</SubMenuItem>
+            {subjects.length > 0 ? (
+                subjects.map((subject, index) => (
+                    <SubMenuItem key={index} onClick={() => { navigate(`/notes?tag=${subject}`); toggleSidebar(); }}>
+                        {subject}
+                    </SubMenuItem>
+                ))
+            ) : (
+                <SubMenuItem style={{ color: '#aaa', cursor: 'default' }}>등록된 과목 없음</SubMenuItem>
+            )}
           </SubMenu>
 
           <MenuItem onClick={() => toggleMenu('projects')}>
@@ -258,7 +335,7 @@ const Layout = () => {
             {expandedMenu.projects ? <FaChevronUp size={12} /> : <FaChevronDown size={12} />}
           </MenuItem>
           <SubMenu $isOpen={expandedMenu.projects}>
-            <SubMenuItem onClick={() => { navigate('/notes?tag=토이프로젝트'); toggleSidebar(); }}>토이프로젝트</SubMenuItem>
+            <SubMenuItem style={{ color: '#aaa', cursor: 'default' }}>프로젝트 없음</SubMenuItem>
           </SubMenu>
 
           <MenuItem onClick={() => { navigate('/notes'); toggleSidebar(); }}>
@@ -273,10 +350,17 @@ const Layout = () => {
             {expandedMenu.team ? <FaChevronUp size={12} /> : <FaChevronDown size={12} />}
           </MenuItem>
           <SubMenu $isOpen={expandedMenu.team}>
-            <SubMenuItem onClick={() => { navigate('/team/capstone'); toggleSidebar(); }}>🎓 캡스톤 디자인</SubMenuItem>
-            <SubMenuItem onClick={() => { navigate('/team/hackathon'); toggleSidebar(); }}>🚀 해커톤 준비</SubMenuItem>
-            <SubMenuItem onClick={() => { alert('새 팀 만들기 모달 (준비중)'); }} style={{ color: '#4A90E2', fontWeight: 'bold' }}>
-                <FaPlus size={10} style={{marginRight: '4px'}}/> 새 팀 만들기
+            {myTeams.length > 0 ? (
+                myTeams.map(team => (
+                    <SubMenuItem key={team.id} onClick={() => { navigate(`/team/${team.id}`); toggleSidebar(); }}>
+                        - {team.name}
+                    </SubMenuItem>
+                ))
+            ) : (
+                <SubMenuItem style={{ color: '#aaa', cursor: 'default' }}>가입된 팀 없음</SubMenuItem>
+            )}
+            <SubMenuItem onClick={() => { navigate('/'); toggleSidebar(); }} style={{ color: '#4A90E2', fontWeight: 'bold' }}>
+                <FaPlus size={10} style={{marginRight: '4px'}}/> 새 팀 만들기 (홈)
             </SubMenuItem>
           </SubMenu>
 
@@ -289,12 +373,12 @@ const Layout = () => {
               {themeMode === 'light' ? '다크 모드 켜기' : '라이트 모드 켜기'}
             </ToggleSwitch>
           </MenuItem>
-          <MenuItem onClick={() => { alert('설정 기능은 준비 중입니다.'); toggleSidebar(); }}>
+          <MenuItem onClick={() => { showAlert('설정 기능은 준비 중입니다.'); toggleSidebar(); }}>
             <div style={{display:'flex', alignItems:'center', gap:'8px'}}>
               <FaCog /> 설정
             </div>
           </MenuItem>
-          <MenuItem onClick={() => { alert('도움말 기능은 준비 중입니다.'); toggleSidebar(); }}>
+          <MenuItem onClick={() => { showAlert('도움말 기능은 준비 중입니다.'); toggleSidebar(); }}>
             <div style={{display:'flex', alignItems:'center', gap:'8px'}}>
               <FaQuestionCircle /> 도움말
             </div>
@@ -304,6 +388,7 @@ const Layout = () => {
 
       <Main>
         <Outlet />
+        <SyncStatusIndicator />
       </Main>
     </Container>
   );

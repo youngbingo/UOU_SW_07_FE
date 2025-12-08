@@ -1,11 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
 import styled from 'styled-components';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { FaSave, FaArrowLeft, FaBold, FaItalic, FaUnderline, FaPalette, FaListUl, FaMinus, FaSmile, FaPen, FaEraser, FaTrash, FaHighlighter, FaUndo, FaRedo, FaShapes, FaHandPaper, FaImage, FaFilePdf, FaSquare, FaCircle, FaPlay } from 'react-icons/fa';
 import EmojiPicker from 'emoji-picker-react';
 import { Stage, Layer, Line, Circle, Rect, Image as KonvaImage, Transformer, RegularPolygon } from 'react-konva';
 import useImage from 'use-image';
 import { Document, Page, pdfjs } from 'react-pdf';
+import { saveNote, loadNote, deleteNote, loadTeamNote, saveTeamNote, deleteTeamNote } from '../utils/storage'; // Storage 유틸 임포트
+import AlertModal from '../components/AlertModal';
+import PromptModal from '../components/PromptModal';
+import ConfirmModal from '../components/ConfirmModal';
 
 // PDF Worker 설정 (필수)
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -463,13 +467,20 @@ const CanvasBorder = styled.div`
 `;
 
 const NotePage = () => {
-  const { date } = useParams();
+  const { id } = useParams(); // URL 파라미터 이름 변경: date -> id
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const teamId = searchParams.get('teamId'); // 쿼리 파라미터에서 teamId 추출
+
   const editorRef = useRef(null);
   const savedRange = useRef(null); 
   
   // 상태
+  const [noteId, setNoteId] = useState(id);
+  const [noteDate, setNoteDate] = useState(null); // 실제 날짜 데이터
+  const [noteTitle, setNoteTitle] = useState('');
+  
   const [color, setColor] = useState('#000000');
   // 도구별 색상/두께 기억
   const [penColor, setPenColor] = useState('#000000');
@@ -492,6 +503,9 @@ const NotePage = () => {
   const isDrawing = useRef(false);
   const [isPenModeOnly, setIsPenModeOnly] = useState(false); // 팜 리젝션 (펜 전용 모드)
   
+  // 지우개 커서 상태 추가
+  const [eraserCursor, setEraserCursor] = useState({ x: 0, y: 0, visible: false });
+  
   // 이미지 관련 상태
   const [images, setImages] = useState([]);
   const [selectedImageId, setSelectedImageId] = useState(null);
@@ -507,6 +521,11 @@ const NotePage = () => {
   const [shapes, setShapes] = useState([]); // 삽입된 도형들
   const [selectedShapeId, setSelectedShapeId] = useState(null);
   const [showShapeMenu, setShowShapeMenu] = useState(false);
+
+  // 모달 상태
+  const [alertState, setAlertState] = useState({ isOpen: false, title: '', message: '' });
+  const [promptState, setPromptState] = useState({ isOpen: false, title: '', placeholder: '', initialValue: '', onConfirm: () => {} });
+  const [confirmState, setConfirmState] = useState({ isOpen: false, title: '', message: '', onConfirm: () => {}, danger: false });
 
   // 최적화: 현재 그리고 있는 선을 위한 Ref (리액트 렌더링 우회)
   const currentLineRef = useRef(null);
@@ -584,45 +603,159 @@ const NotePage = () => {
   };
 
   useEffect(() => {
-    const savedNote = localStorage.getItem(`note_${date}`);
-    if (savedNote) {
-      const parsed = JSON.parse(savedNote);
-      if (editorRef.current) {
-        editorRef.current.innerHTML = parsed.content;
-      }
-      setSettings({ method: parsed.method, template: parsed.template });
-      if (parsed.category) setCategory(parsed.category);
-      if (parsed.drawingData) {
-        setLines(parsed.drawingData);
-        // 초기 로드 시 히스토리도 동기화
-        const initialImages = parsed.images || [];
-        const initialShapes = parsed.shapes || [];
-        setHistory([{ lines: parsed.drawingData, images: initialImages, shapes: initialShapes }]);
-        setHistoryStep(0);
-        setShapes(initialShapes);
-      }
-      if (parsed.images) {
-        setImages(parsed.images);
-      }
-    } else {
-        // ... (초기 템플릿 로직 생략)
-        if (editorRef.current && editorRef.current.innerHTML === "") {
-            let initialHTML = "";
-            // ... (템플릿별 초기 HTML 설정)
-            if (settings.method === 'handwriting' && settings.template === 'cornell') {
-                initialHTML = `
-                    <div class="cornell-container" style="display: flex; height: 100%; gap: 10px;">
-                        <div class="cue-column" style="width: 30%; min-width: 150px; border-right: 2px solid #ddd; padding-right: 10px;" contenteditable="true" placeholder="키워드/질문"></div>
-                        <div class="note-column" style="flex: 1;" contenteditable="true" placeholder="강의 내용 필기"></div>
-                    </div>
-                    <div class="summary-section" style="border-top: 2px solid #ddd; min-height: 100px; margin-top: 20px; padding-top: 10px;" contenteditable="true" placeholder="요약 정리"></div>
-                `;
+    const fetchNote = async () => {
+        // 팀 문서인 경우
+        if (teamId) {
+            const teamNote = await loadTeamNote(teamId, id);
+            
+            if (teamNote) {
+                setNoteDate(teamNote.date);
+                setNoteTitle(teamNote.title || '');
+                
+                if (editorRef.current) {
+                    editorRef.current.innerHTML = teamNote.content || '';
+                }
+                setSettings({ 
+                    method: teamNote.method || 'text', 
+                    template: teamNote.template || 'blank' 
+                });
+                if (teamNote.category) setCategory(teamNote.category);
+                if (teamNote.drawingData) {
+                    setLines(teamNote.drawingData);
+                    const initialImages = teamNote.images || [];
+                    const initialShapes = teamNote.shapes || [];
+                    setHistory([{ lines: teamNote.drawingData, images: initialImages, shapes: initialShapes }]);
+                    setHistoryStep(0);
+                    setShapes(initialShapes);
+                }
+                if (teamNote.images) {
+                    setImages(teamNote.images);
+                }
             }
-            // ... (기타 템플릿)
-            if (initialHTML) editorRef.current.innerHTML = initialHTML;
+            return; // 팀 문서 처리 완료
         }
-    }
-  }, [date, settings.method, settings.template]);
+
+        // 개인 노트인 경우 (기존 로직)
+        const savedNote = await loadNote(id);
+        
+        if (savedNote) {
+            setNoteDate(savedNote.date);
+            setNoteTitle(savedNote.title || '');
+            
+            if (editorRef.current) {
+                editorRef.current.innerHTML = savedNote.content;
+            }
+            setSettings({ method: savedNote.method, template: savedNote.template });
+            if (savedNote.category) setCategory(savedNote.category);
+            if (savedNote.drawingData) {
+                setLines(savedNote.drawingData);
+                // 초기 로드 시 히스토리도 동기화
+                const initialImages = savedNote.images || [];
+                const initialShapes = savedNote.shapes || [];
+                setHistory([{ lines: savedNote.drawingData, images: initialImages, shapes: initialShapes }]);
+                setHistoryStep(0);
+                setShapes(initialShapes);
+            }
+            if (savedNote.images) {
+                setImages(savedNote.images);
+            }
+        } else {
+            // 새 노트인 경우 (또는 ID가 날짜 형식인 구버전 URL 접근 시)
+            // ... (기존 초기화 로직 유지)
+            
+            // 만약 ID가 날짜 형식이면 (구버전 즐겨찾기 등)
+            if (id.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                setNoteDate(id);
+            } else {
+                // ID에서 날짜 추출 시도 (YYYY-MM-DD_timestamp 형식)
+                const parts = id.split('_');
+                if (parts.length > 0 && parts[0].match(/^\d{4}-\d{2}-\d{2}$/)) {
+                     setNoteDate(parts[0]);
+                }
+            }
+
+            // ... (초기 템플릿 로직)
+            if (editorRef.current && editorRef.current.innerHTML === "") {
+                let initialHTML = "";
+                
+                // 손글씨 모드 템플릿
+                if (settings.method === 'handwriting' && settings.template === 'cornell') {
+                    initialHTML = `
+                        <div class="cornell-container" style="display: flex; height: 100%; gap: 10px;">
+                            <div class="cue-column" style="width: 30%; min-width: 150px; border-right: 2px solid #ddd; padding-right: 10px;" contenteditable="true" placeholder="키워드/질문"></div>
+                            <div class="note-column" style="flex: 1;" contenteditable="true" placeholder="강의 내용 필기"></div>
+                        </div>
+                        <div class="summary-section" style="border-top: 2px solid #ddd; min-height: 100px; margin-top: 20px; padding-top: 10px;" contenteditable="true" placeholder="요약 정리"></div>
+                    `;
+                }
+                
+                // 텍스트 모드 템플릿
+                if (settings.method === 'text') {
+                    if (settings.template === 'meeting') {
+                        initialHTML = `
+                            <h2>📋 회의록</h2>
+                            <p><strong>일시:</strong> ${new Date().toLocaleDateString()}</p>
+                            <p><strong>참석자:</strong> </p>
+                            <hr/>
+                            <h3>📌 안건</h3>
+                            <ul>
+                                <li></li>
+                            </ul>
+                            <h3>💬 논의 내용</h3>
+                            <p></p>
+                            <h3>✅ 결정 사항</h3>
+                            <ul>
+                                <li></li>
+                            </ul>
+                            <h3>📝 다음 액션 아이템</h3>
+                            <ul>
+                                <li></li>
+                            </ul>
+                        `;
+                    } else if (settings.template === 'dev_log') {
+                        initialHTML = `
+                            <h2>💻 학습/개발 일지</h2>
+                            <p><strong>날짜:</strong> ${new Date().toLocaleDateString()}</p>
+                            <hr/>
+                            <h3>🎯 오늘의 목표</h3>
+                            <p></p>
+                            <h3>📚 학습 내용</h3>
+                            <p></p>
+                            <h3>🔨 구현 내용</h3>
+                            <p></p>
+                            <h3>❓ 문제 & 해결</h3>
+                            <p></p>
+                            <h3>💡 배운 점 / 느낀 점</h3>
+                            <p></p>
+                        `;
+                    } else if (settings.template === 'todo') {
+                        initialHTML = `
+                            <h2>✅ 체크리스트</h2>
+                            <p><strong>날짜:</strong> ${new Date().toLocaleDateString()}</p>
+                            <hr/>
+                            <h3>오늘 할 일</h3>
+                            <ul>
+                                <li>☐ </li>
+                                <li>☐ </li>
+                                <li>☐ </li>
+                            </ul>
+                            <h3>우선순위</h3>
+                            <ul>
+                                <li>🔴 긴급: </li>
+                                <li>🟡 중요: </li>
+                                <li>🟢 보통: </li>
+                            </ul>
+                        `;
+                    }
+                }
+                
+                if (initialHTML) editorRef.current.innerHTML = initialHTML;
+            }
+        }
+    };
+    
+    fetchNote();
+  }, [id, teamId, settings.method, settings.template]);
 
   useEffect(() => {
     // 키보드 이벤트 리스너: Delete 키로 이미지 삭제
@@ -685,22 +818,26 @@ const NotePage = () => {
 
     const range = selection.getRangeAt(0);
     if (!selection.isCollapsed) {
+      // 선택된 텍스트를 span으로 감싸서 폰트 크기 적용
       const span = document.createElement('span');
       span.style.fontSize = `${size}px`;
+      
+      // 기존 컨텐츠를 추출하여 span에 넣음
       try {
-        range.surroundContents(span);
+          const content = range.extractContents();
+          span.appendChild(content);
+          range.insertNode(span);
+          
+          // 커서 위치 조정 (선택 영역 유지)
+          const newRange = document.createRange();
+          newRange.selectNodeContents(span);
+          selection.removeAllRanges();
+          selection.addRange(newRange);
       } catch (e) {
-        document.execCommand("fontSize", false, "7");
-        const fontElements = editorRef.current.getElementsByTagName("font");
-        for (let i = 0; i < fontElements.length; i++) {
-            if (fontElements[i].size === "7") {
-                fontElements[i].removeAttribute("size");
-                fontElements[i].style.fontSize = `${size}px`;
-            }
-        }
+          console.error("Font size apply error:", e);
+          // 예외 발생 시 execCommand로 fallback (하지만 px 단위는 아님)
+          document.execCommand("fontSize", false, "7");
       }
-      selection.removeAllRanges();
-      selection.addRange(range);
     }
     if (editorRef.current) {
       editorRef.current.focus();
@@ -722,27 +859,117 @@ const NotePage = () => {
     setShowEmojiPicker(false);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (editorRef.current) {
-      const noteData = {
-        id: date, 
-        date: date,
-        content: editorRef.current.innerHTML,
-        method: settings.method,
-        template: settings.template,
-        category: category,
-        drawingData: lines, // 드로잉 데이터 저장
-        images: images, // 이미지 데이터 저장
-        shapes: shapes, // 도형 데이터 저장
-        updatedAt: new Date().toISOString(),
-        title: editorRef.current.innerText.split('\n')[0] || '제목 없음' 
-      };
+      // 제목 자동 추출 (첫 줄 or 기본값)
+      let extractedTitle = '제목 없음';
+      if (settings.method === 'text') {
+        extractedTitle = editorRef.current.innerText.split('\n')[0] || '제목 없음';
+      } else {
+        extractedTitle = noteTitle || '손글씨 노트';
+      }
       
-      localStorage.setItem(`note_${date}`, JSON.stringify(noteData));
-      console.log('Saved:', noteData);
+      // prompt 대신 PromptModal 사용
+      setPromptState({
+        isOpen: true,
+        title: '노트 제목 입력',
+        placeholder: '노트 제목을 입력하세요',
+        initialValue: extractedTitle,
+        onConfirm: async (currentTitle) => {
+          const noteData = {
+            id: id, 
+            date: noteDate,
+            content: editorRef.current.innerHTML,
+            method: settings.method,
+            template: settings.template,
+            category: category,
+            drawingData: lines,
+            images: images,
+            shapes: shapes,
+            updatedAt: new Date().toISOString(),
+            title: currentTitle
+          };
+          
+          try {
+              if (teamId) {
+                  await saveTeamNote(teamId, id, noteData);
+                  console.log('Team note saved successfully:', noteData);
+              } else {
+                  await saveNote(id, noteData);
+                  console.log('Personal note saved successfully:', noteData);
+              }
+              setNoteTitle(currentTitle);
+              setAlertState({
+                isOpen: true,
+                title: '성공',
+                message: '저장되었습니다!'
+              });
+          } catch (e) {
+              console.error(e);
+              setAlertState({
+                isOpen: true,
+                title: '오류',
+                message: '저장 중 오류가 발생했습니다.'
+              });
+          }
+        }
+      });
     }
-    alert('저장되었습니다!');
-    navigate('/');
+  };
+
+  const handleDelete = async () => {
+    setConfirmState({
+      isOpen: true,
+      title: '노트 삭제',
+      message: '정말 이 노트를 삭제하시겠습니까?',
+      danger: true,
+      onConfirm: async () => {
+        try {
+            if (teamId) {
+                await deleteTeamNote(teamId, id);
+            } else {
+                await deleteNote(id, noteDate);
+            }
+            setAlertState({
+              isOpen: true,
+              title: '완료',
+              message: '삭제되었습니다.',
+              onConfirm: () => navigate(-1)
+            });
+        } catch (e) {
+            console.error(e);
+            setAlertState({
+              isOpen: true,
+              title: '오류',
+              message: '삭제 중 오류가 발생했습니다.'
+            });
+        }
+      }
+    });
+  };
+
+  const handleAddShape = (type) => {
+    const newShape = {
+      id: Date.now().toString(),
+      type: type,
+      x: 150,
+      y: 150,
+      stroke: color,
+      strokeWidth: 2,
+    };
+
+    if (type === 'rect') {
+        newShape.width = 100;
+        newShape.height = 100;
+    } else {
+        // circle, triangle
+        newShape.radius = 50;
+    }
+
+    const newShapes = [...shapes, newShape];
+    setShapes(newShapes);
+    saveHistory(lines, images, newShapes);
+    setShowShapeMenu(false);
   };
 
   // 히스토리 저장 함수
@@ -867,12 +1094,18 @@ const NotePage = () => {
   };
 
   const handleMouseMove = (e) => {
+    const stage = e.target.getStage();
+    const point = stage.getPointerPosition();
+    
+    // 지우개 커서 위치 업데이트
+    if (tool === 'eraser') {
+      setEraserCursor({ x: point.x, y: point.y, visible: true });
+    }
+    
     if (!isDrawing.current || !currentLineRef.current) return;
     // 팜 리젝션 체크 (그리는 중에도 터치 무시)
     if (isPenModeOnly && e.evt.pointerType !== 'pen') return;
 
-    const stage = e.target.getStage();
-    const point = stage.getPointerPosition();
     
     // Ref의 포인트 업데이트 (상태 업데이트 X -> 렌더링 X)
     currentLineRef.current.points = currentLineRef.current.points.concat([point.x, point.y]);
@@ -927,7 +1160,10 @@ const NotePage = () => {
           <ActionButton onClick={() => navigate(-1)} style={{ padding: '8px' }}>
             <FaArrowLeft />
           </ActionButton>
-          {date} 노트
+          {noteDate || '새 노트'} {teamId ? '팀 문서' : '노트'}
+          <span style={{fontSize: '14px', color: '#666', fontWeight: 'normal'}}>
+            {noteTitle ? `- ${noteTitle}` : ''}
+          </span>
         </DateTitle>
         <div style={{ display: 'flex', gap: '10px' }}>
             <CategorySelect value={category} onChange={(e) => setCategory(e.target.value)}>
@@ -939,6 +1175,9 @@ const NotePage = () => {
                 <option value="토이프로젝트">토이프로젝트</option>
                 <option value="기타">기타</option>
             </CategorySelect>
+            <ActionButton onClick={handleDelete} title="삭제">
+                <FaTrash />
+            </ActionButton>
             <ActionButton $primary onClick={handleSave}>
             <FaSave /> 저장
             </ActionButton>
@@ -1055,19 +1294,31 @@ const NotePage = () => {
                 onClick={() => {
                     if (selectedImageId) {
                         // 이미지 선택 상태면 이미지 삭제
-                        if(window.confirm('선택한 이미지를 삭제하시겠습니까?')) {
+                        setConfirmState({
+                          isOpen: true,
+                          title: '이미지 삭제',
+                          message: '선택한 이미지를 삭제하시겠습니까?',
+                          danger: true,
+                          onConfirm: () => {
                             const newImages = images.filter(img => img.id !== selectedImageId);
                             setImages(newImages);
                             setSelectedImageId(null);
                             saveHistory(lines, newImages);
-                        }
+                          }
+                        });
                     } else {
                         // 아니면 전체 필기 삭제
-                        if(window.confirm('모든 필기 내용을 지우시겠습니까?')) {
+                        setConfirmState({
+                          isOpen: true,
+                          title: '전체 지우기',
+                          message: '모든 필기 내용을 지우시겠습니까?',
+                          danger: true,
+                          onConfirm: () => {
                             setLines([]);
-                            setHistory([{ lines: [], images: images }]); // 이미지는 유지? or 전체 삭제? -> 일단 필기만 삭제
-                            setHistoryStep(0); // 전체 삭제는 히스토리 리셋하는 게 일반적임
-                        }
+                            setHistory([{ lines: [], images: images }]);
+                            setHistoryStep(0);
+                          }
+                        });
                     }
                 }}
                 title={selectedImageId ? "선택한 이미지 삭제" : "전체 지우기"}
@@ -1265,6 +1516,9 @@ const NotePage = () => {
                       }}
                       onMouseMove={handleMouseMove}
                       onMouseUp={handleMouseUp}
+                      onMouseLeave={() => setEraserCursor({ ...eraserCursor, visible: false })}
+                      onMouseEnter={() => tool === 'eraser' && setEraserCursor({ ...eraserCursor, visible: true })}
+                      style={{ cursor: tool === 'eraser' ? 'none' : 'crosshair' }}
                       onTouchStart={(e) => {
                         checkDeselect(e);
                         handleMouseDown(e);
@@ -1292,7 +1546,7 @@ const NotePage = () => {
                                 }}
                             />
                         ))}
-                        {/* 삽입된 도형들 */}
+                        {/* 삽입된 도형들 - 렌더링 코드 추가 */}
                         {shapes.map((shape, i) => (
                             <EditableShape
                                 key={shape.id}
@@ -1398,6 +1652,34 @@ const NotePage = () => {
                                 listening={false}
                             />
                         )}
+                        
+                        {/* 지우개 커서 표시 */}
+                        {tool === 'eraser' && eraserCursor.visible && (
+                            <Circle
+                                x={eraserCursor.x}
+                                y={eraserCursor.y}
+                                radius={10} // 지우개 크기의 절반
+                                stroke="#666"
+                                strokeWidth={2}
+                                dash={[5, 5]}
+                                listening={false}
+                                perfectDrawEnabled={false}
+                            />
+                        )}
+                        
+                        {/* 지우개 커서 표시 */}
+                        {tool === 'eraser' && eraserCursor.visible && (
+                            <Circle
+                                x={eraserCursor.x}
+                                y={eraserCursor.y}
+                                radius={10}
+                                stroke="#666"
+                                strokeWidth={2}
+                                dash={[5, 5]}
+                                listening={false}
+                                perfectDrawEnabled={false}
+                            />
+                        )}
                       </Layer>
                   </Stage>
               </DrawingLayer>
@@ -1415,6 +1697,32 @@ const NotePage = () => {
           />
         </div>
       </EditorContainer>
+
+      <AlertModal 
+        isOpen={alertState.isOpen}
+        onClose={() => setAlertState({ ...alertState, isOpen: false })}
+        title={alertState.title}
+        message={alertState.message}
+        onConfirm={alertState.onConfirm}
+      />
+      
+      <PromptModal
+        isOpen={promptState.isOpen}
+        onClose={() => setPromptState({ ...promptState, isOpen: false })}
+        onConfirm={promptState.onConfirm}
+        title={promptState.title}
+        placeholder={promptState.placeholder}
+        initialValue={promptState.initialValue}
+      />
+      
+      <ConfirmModal
+        isOpen={confirmState.isOpen}
+        onClose={() => setConfirmState({ ...confirmState, isOpen: false })}
+        onConfirm={confirmState.onConfirm}
+        title={confirmState.title}
+        message={confirmState.message}
+        danger={confirmState.danger}
+      />
     </PageContainer>
   );
 };

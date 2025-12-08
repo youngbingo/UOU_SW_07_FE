@@ -8,6 +8,8 @@ import CalendarPage from './pages/CalendarPage';
 import NotePage from './pages/NotePage';
 import NoteListPage from './pages/NoteListPage';
 import TeamSpacePage from './pages/TeamSpacePage';
+import SignUpPage from './pages/SignUpPage';
+import { AuthProvider } from './context/AuthContext';
 
 // 테마 컨텍스트 생성
 export const ThemeContext = createContext();
@@ -27,21 +29,25 @@ function App() {
   };
 
   return (
-    <ThemeContext.Provider value={{ themeMode, toggleTheme }}>
-      <ThemeProvider theme={theme}>
-        <GlobalStyle />
-        <BrowserRouter>
-          <Routes>
-            <Route path="/" element={<Layout />}>
-              <Route index element={<CalendarPage />} />
-              <Route path="notes" element={<NoteListPage />} />
-              <Route path="note/:date" element={<NotePage />} />
-              <Route path="team/:teamId" element={<TeamSpacePage />} />
-            </Route>
-          </Routes>
-        </BrowserRouter>
-      </ThemeProvider>
-    </ThemeContext.Provider>
+    <AuthProvider>
+        <ThemeContext.Provider value={{ themeMode, toggleTheme }}>
+        <ThemeProvider theme={theme}>
+            <GlobalStyle />
+            <BrowserRouter>
+            <Routes>
+                <Route path="/" element={<Layout />}>
+                <Route index element={<CalendarPage />} />
+                <Route path="notes" element={<NoteListPage />} />
+                {/* 기존 date 파라미터를 id로 변경하여 다중 메모 지원 */}
+                <Route path="note/:id" element={<NotePage />} />
+                <Route path="team/:teamId" element={<TeamSpacePage />} />
+                <Route path="signup" element={<SignUpPage />} />
+                </Route>
+            </Routes>
+            </BrowserRouter>
+        </ThemeProvider>
+        </ThemeContext.Provider>
+    </AuthProvider>
   );
 }
 

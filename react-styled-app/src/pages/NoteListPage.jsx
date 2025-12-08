@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import { useNavigate } from 'react-router-dom';
-import { FaPen, FaSearch } from 'react-icons/fa';
+import { FaPen, FaSearch, FaTrash } from 'react-icons/fa';
+import { deleteNote } from '../utils/storage'; // deleteNote 추가
+import ConfirmModal from '../components/ConfirmModal';
 
 const PageContainer = styled.div`
   display: flex;
@@ -128,61 +130,81 @@ const Tag = styled.span`
   color: ${({ theme }) => theme.colors.textSecondary};
 `;
 
+const DeleteButton = styled.button`
+  background: none;
+  border: none;
+  color: ${({ theme }) => theme.colors.textSecondary};
+  padding: 4px;
+  cursor: pointer;
+  transition: color 0.2s;
+  margin-left: 8px;
+
+  &:hover {
+    color: ${({ theme }) => theme.colors.danger};
+  }
+`;
+
 const NoteListPage = () => {
   const navigate = useNavigate();
   const [notes, setNotes] = useState([]);
   const [filteredNotes, setFilteredNotes] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('전체');
   const [searchTerm, setSearchTerm] = useState('');
+  const [confirmState, setConfirmState] = useState({ isOpen: false, noteId: null, noteDate: null });
 
-  // 더미 데이터 + 로컬스토리지 데이터 로드
-  useEffect(() => {
-    const loadNotes = () => {
-      const loadedNotes = [];
-      // 더미 데이터 추가
-      loadedNotes.push(
-        { id: 1, title: '알고리즘 3주차 정리', date: '2025-10-06', category: '전공필수', preview: '그래프 탐색 알고리즘(BFS, DFS)의 시간복잡도 분석...' },
-        { id: 2, title: '팀 프로젝트 아이디어 회의', date: '2025-10-05', category: '캡스톤디자인', preview: '주제: 대학생을 위한 올인원 플래너 앱 개발...' },
-        { id: 3, title: '데이터베이스 모델링 실습', date: '2025-10-03', category: '데이터베이스', preview: 'ERD 다이어그램 작성 및 정규화 과정 실습...' },
-        { id: 4, title: '운영체제 중간고사 대비', date: '2025-09-28', category: '전공선택', preview: '프로세스와 스레드의 차이점, 스케줄링 알고리즘 정리...' },
-        { id: 5, title: '웹 프로그래밍 기초', date: '2025-09-20', category: '교양', preview: 'HTML, CSS, JavaScript의 기본 동작 원리...' }
-      );
-
-      // 로컬스토리지 데이터 추가 (key가 note_로 시작하는 것들)
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key.startsWith('note_')) {
-          try {
-            const noteData = JSON.parse(localStorage.getItem(key));
-            // 중복 방지 (날짜 기준, 실제로는 ID가 필요)
-            if (!loadedNotes.find(n => n.date === noteData.date)) {
-                // HTML 태그 제거하고 순수 텍스트만 미리보기에 사용
-                const tempDiv = document.createElement('div');
-                tempDiv.innerHTML = noteData.content;
-                const plainText = tempDiv.textContent || tempDiv.innerText || '';
-                
-                loadedNotes.unshift({
-                    id: key,
-                    title: noteData.title,
-                    date: noteData.date,
-                    category: noteData.category || '기타',
-                    preview: plainText.substring(0, 100) + '...'
-                });
-            }
-          } catch (e) {
-            console.error('Error parsing note data', e);
+  const loadNotes = () => {
+    const loadedNotes = [];
+    
+    // 로컬스토리지 데이터 추가 (key가 note_로 시작하는 것들)
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key.startsWith('note_')) {
+        try {
+          const noteData = JSON.parse(localStorage.getItem(key));
+          if (!loadedNotes.find(n => n.date === noteData.date)) {
+              const tempDiv = document.createElement('div');
+              tempDiv.innerHTML = noteData.content;
+              const plainText = tempDiv.textContent || tempDiv.innerText || '';
+              
+              loadedNotes.unshift({
+                  id: key.replace('note_', ''), // ID 추출 방식 수정
+                  title: noteData.title,
+                  date: noteData.date,
+                  category: noteData.category || '기타',
+                  preview: plainText.substring(0, 100) + '...'
+              });
           }
+        } catch (e) {
+          console.error('Error parsing note data', e);
         }
       }
-      
-      // 날짜순 정렬
-      loadedNotes.sort((a, b) => new Date(b.date) - new Date(a.date));
-      setNotes(loadedNotes);
-      setFilteredNotes(loadedNotes);
-    };
+    }
+    
+    // 날짜순 정렬
+    loadedNotes.sort((a, b) => new Date(b.date) - new Date(a.date));
+    setNotes(loadedNotes);
+    setFilteredNotes(loadedNotes);
+  };
 
+  // 데이터 로드
+  useEffect(() => {
     loadNotes();
   }, []);
+
+  const handleDelete = (e, noteId, noteDate) => {
+    e.stopPropagation(); // 카드 클릭 이벤트 방지
+    setConfirmState({ isOpen: true, noteId, noteDate });
+  };
+
+  const confirmDelete = async () => {
+    try {
+      await deleteNote(confirmState.noteId, confirmState.noteDate);
+      loadNotes(); // 목록 새로고침
+      setConfirmState({ isOpen: false, noteId: null, noteDate: null });
+    } catch (e) {
+      console.error('Delete failed:', e);
+    }
+  };
 
   // 필터링 로직
   useEffect(() => {
@@ -235,16 +257,21 @@ const NoteListPage = () => {
 
       <NoteList>
         {filteredNotes.map(note => (
-          <NoteCard key={note.id} onClick={() => navigate(`/note/${note.date}`)}>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '6px' }}>
-              <NoteTitle>{note.title}</NoteTitle>
-              <Tag>{note.category}</Tag>
+          <NoteCard key={note.id} onClick={() => navigate(`/note/${note.id}`)}>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '6px', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <NoteTitle>{note.title || '제목 없음'}</NoteTitle>
+                <Tag>{note.category}</Tag>
+              </div>
+              <DeleteButton onClick={(e) => handleDelete(e, note.id, note.date)}>
+                <FaTrash size={12} />
+              </DeleteButton>
             </div>
             <NotePreview>
               {note.preview}
             </NotePreview>
             <NoteMeta>
-              <span>{note.date}</span>
+              <span>{note.date || '날짜 없음'}</span>
               <FaPen style={{ fontSize: '12px' }} />
             </NoteMeta>
           </NoteCard>
@@ -255,6 +282,15 @@ const NoteListPage = () => {
             </div>
         )}
       </NoteList>
+
+      <ConfirmModal
+        isOpen={confirmState.isOpen}
+        onClose={() => setConfirmState({ isOpen: false, noteId: null, noteDate: null })}
+        onConfirm={confirmDelete}
+        title="노트 삭제"
+        message="정말 삭제하시겠습니까?"
+        danger={true}
+      />
     </PageContainer>
   );
 };

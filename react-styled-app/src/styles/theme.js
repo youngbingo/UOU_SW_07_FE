@@ -1,22 +1,23 @@
 const lightTheme = {
   mode: 'light',
   colors: {
-    primary: '#4A90E2',
-    secondary: '#F5A623',
-    background: '#F8F9FA',
+    primary: '#50a46a', // 요청하신 메인 컬러 (차분한 초록)
+    secondary: '#8BC34A', // 보조 컬러 (밝은 연두)
+    background: '#F5F7F6', // 아주 연한 초록빛이 감도는 회색 배경
     surface: '#FFFFFF',
-    text: '#333333',
-    textSecondary: '#666666',
+    text: '#2C3330', // 약간의 초록기가 감도는 짙은 회색
+    textSecondary: '#6E7572',
     border: '#E1E4E8',
-    danger: '#E74C3C',
-    success: '#2ECC71',
-    gray: '#f0f0f0',
+    danger: '#E57373',
+    success: '#50a46a',
+    gray: '#EFF2F0',
   },
   fontSizes: {
     xs: '12px',
     small: '14px',
     medium: '16px',
     large: '20px',
+    xlarge: '24px',
     xl: '24px',
     xxl: '32px',
   },
@@ -49,14 +50,14 @@ const darkTheme = {
   mode: 'dark',
   colors: {
     ...lightTheme.colors,
-    primary: '#64B5F6', // 다크 모드에서는 조금 더 밝은 블루
-    secondary: '#FFB74D',
-    background: '#121212', // 아주 어두운 회색 (완전 검정보다 눈이 편함)
-    surface: '#1E1E1E', // 카드 배경
-    text: '#E0E0E0', // 밝은 회색 텍스트
-    textSecondary: '#A0A0A0',
-    border: '#333333',
-    gray: '#2C2C2C', // hover 배경 등
+    primary: '#6ECF8B', // 다크 모드에서는 가독성을 위해 조금 더 밝은 톤
+    secondary: '#AED581',
+    background: '#191C1A', // 아주 어두운 녹회색
+    surface: '#232725', // 카드 배경
+    text: '#E0E2E1', // 밝은 회색 텍스트
+    textSecondary: '#9EA3A0',
+    border: '#3A3F3C',
+    gray: '#2F3331', // hover 배경 등
   },
   shadows: {
     small: '0 2px 4px rgba(0, 0, 0, 0.3)',

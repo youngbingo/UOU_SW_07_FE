@@ -6,6 +6,8 @@ import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { FaPlus, FaList, FaCalendarAlt, FaChevronRight, FaCog, FaTimes } from 'react-icons/fa';
 import CreateNoteModal from '../components/CreateNoteModal';
+import AlertModal from '../components/AlertModal';
+import { loadDayNotesList, saveNote, loadRecentNotes, deleteNote, getUserTeams, createTeam } from '../utils/storage'; // loadRecentNotes, 팀 관련 함수 추가
 
 const PageContainer = styled.div`
   display: flex;
@@ -326,22 +328,46 @@ const Button = styled.button`
   }
 `;
 
+const TeamItem = styled.div`
+  padding: ${({ theme }) => theme.spacing.medium};
+  background-color: ${({ theme }) => theme.colors.background};
+  border-radius: ${({ theme }) => theme.borderRadius.medium};
+  margin-bottom: ${({ theme }) => theme.spacing.small};
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-left: 4px solid ${({ theme }) => theme.colors.primary};
+  transition: transform 0.2s;
+
+  &:hover {
+    transform: translateX(4px);
+    background-color: ${({ theme }) => theme.colors.gray};
+  }
+`;
+
 const CalendarPage = () => {
   const [view, setView] = useState('calendar'); // 'calendar' | 'timetable'
   const [value, onChange] = useState(new Date());
   const navigate = useNavigate();
   
-  // 노트 생성 모달
+  // 노트 생성/목록 모달
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState(null);
+  const [dayNotes, setDayNotes] = useState([]); // 해당 날짜의 노트 목록
 
-  // 시간표 관련 상태
-  const [timeRange, setTimeRange] = useState({ start: 9, end: 18 }); // 기본 09:00 ~ 18:00
   const [timetableData, setTimetableData] = useState([]);
   const [isTimeSettingOpen, setIsTimeSettingOpen] = useState(false);
+  const [timeRange, setTimeRange] = useState({ start: 9, end: 18 }); // timeRange 상태 추가
   const [classModalOpen, setClassModalOpen] = useState(false);
   const [selectedCell, setSelectedCell] = useState(null); // { day: 0, time: 9 }
   const [classInput, setClassInput] = useState({ name: '', room: '', color: '#4A90E2' });
+
+  const [recentNotes, setRecentNotes] = useState([]);
+  const [teams, setTeams] = useState([]); // 팀 목록 상태
+  const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
+  const [teamNameInput, setTeamNameInput] = useState('');
+  const [alertState, setAlertState] = useState({ isOpen: false, title: '', message: '' });
 
   // 데이터 로드
   useEffect(() => {
@@ -350,12 +376,99 @@ const CalendarPage = () => {
     
     const savedTimeRange = localStorage.getItem('timeRange');
     if (savedTimeRange) setTimeRange(JSON.parse(savedTimeRange));
+
+    // 최근 노트 불러오기
+    const fetchRecent = async () => {
+        const notes = await loadRecentNotes(3);
+        setRecentNotes(notes);
+    };
+    fetchRecent();
+
+    // 팀 목록 불러오기
+    const fetchTeams = async () => {
+        const myTeams = await getUserTeams();
+        setTeams(myTeams);
+    };
+    fetchTeams();
   }, []);
 
-  // 데이터 저장
-  const saveTimetable = (newData) => {
-    setTimetableData(newData);
-    localStorage.setItem('timetable', JSON.stringify(newData));
+  const handleCreateTeam = async () => {
+    if (!teamNameInput.trim()) return;
+    try {
+        const newTeamId = await createTeam(teamNameInput);
+        setAlertState({ isOpen: true, title: '성공', message: '팀이 생성되었습니다!' });
+        setIsTeamModalOpen(false);
+        setTeamNameInput('');
+        // 목록 갱신
+        const myTeams = await getUserTeams();
+        setTeams(myTeams);
+    } catch (e) {
+        setAlertState({ isOpen: true, title: '오류', message: '팀 생성에 실패했습니다. (로그인 필요)' });
+    }
+  };
+
+  // 노트 목록 로드 (전체 노트에서 필터링)
+  const fetchDayNotes = async (dateStr) => {
+    // Storage 유틸 사용 (로컬 -> Firebase 순)
+    const notes = await loadDayNotesList(dateStr);
+    
+    // 마이그레이션 로직 (구버전 호환)
+    if (notes.length === 0) {
+         const oldNote = localStorage.getItem(`note_${dateStr}`);
+         if (oldNote) {
+            const parsed = JSON.parse(oldNote);
+            const newList = [{
+                id: dateStr, 
+                title: parsed.title || '제목 없음',
+                date: dateStr,
+                ...parsed
+            }];
+            // 새 구조로 저장 (마이그레이션)
+            await saveNote(dateStr, newList[0]); 
+            return newList;
+         }
+    }
+    return notes;
+  };
+
+  const handleDateClick = async (date) => {
+    const dateStr = typeof date === 'string' ? date : format(date, 'yyyy-MM-dd');
+    setSelectedDate(dateStr);
+    
+    const notes = await fetchDayNotes(dateStr);
+    setDayNotes(notes);
+    setIsModalOpen(true);
+  };
+
+  const handleCreateNote = async (settings) => {
+    // 새 노트 ID 생성 (timestamp)
+    const newNoteId = `${selectedDate}_${Date.now()}`;
+    
+    // 빈 노트 데이터 생성
+    const newNote = {
+        id: newNoteId,
+        date: selectedDate,
+        title: '새로운 노트',
+        ...settings
+    };
+    
+    // Storage 유틸 사용하여 저장
+    await saveNote(newNoteId, newNote);
+
+    // 상태 업데이트 (모달 닫고 이동)
+    setIsModalOpen(false);
+    navigate(`/note/${newNoteId}`);
+  };
+
+  const handleNoteClick = (noteId) => {
+      navigate(`/note/${noteId}`);
+  };
+
+  const handleDeleteNote = async (noteId) => {
+    if (!selectedDate) return;
+    await deleteNote(noteId, selectedDate);
+    const notes = await fetchDayNotes(selectedDate);
+    setDayNotes(notes);
   };
 
   const saveTimeRange = (newRange) => {
@@ -364,21 +477,9 @@ const CalendarPage = () => {
     setIsTimeSettingOpen(false);
   };
 
-  const handleDateClick = (date) => {
-    const dateStr = typeof date === 'string' ? date : format(date, 'yyyy-MM-dd');
-    const existingNote = localStorage.getItem(`note_${dateStr}`);
-    
-    if (existingNote) {
-        navigate(`/note/${dateStr}`);
-    } else {
-        setSelectedDate(dateStr);
-        setIsModalOpen(true);
-    }
-  };
-
-  const handleCreateNote = (settings) => {
-    setIsModalOpen(false);
-    navigate(`/note/${selectedDate}`, { state: settings });
+  const saveTimetable = (newData) => {
+    setTimetableData(newData);
+    localStorage.setItem('timetable', JSON.stringify(newData));
   };
 
   const days = ['시간', '월', '화', '수', '목', '금'];
@@ -419,18 +520,19 @@ const CalendarPage = () => {
     setClassModalOpen(false);
   };
 
-  const recentNotes = [
-    { id: 1, title: '알고리즘 3주차 정리', date: '2025-10-06', tag: '전공필수', time: '방금 전' },
-    { id: 2, title: '팀 프로젝트 아이디어 회의', date: '2025-10-05', tag: '캡스톤디자인', time: '어제' },
-    { id: 3, title: '데이터베이스 모델링 실습', date: '2025-10-03', tag: '데이터베이스', time: '3일 전' },
-  ];
 
   // 날짜 타일 내용 (메모 있으면 점 표시)
   const tileContent = ({ date, view }) => {
     if (view === 'month') {
       const dateStr = format(date, 'yyyy-MM-dd');
-      const hasNote = localStorage.getItem(`note_${dateStr}`);
-      if (hasNote) {
+      
+      // 로컬 스토리지에서 리스트 키 존재 여부만 빠르게 확인
+      // (비동기 함수를 여기서 쓸 수 없으므로 로컬만 체크)
+      const listKey = `note_list_${dateStr}`;
+      const hasNotes = localStorage.getItem(listKey);
+      const hasOldNote = localStorage.getItem(`note_${dateStr}`);
+      
+      if (hasNotes || hasOldNote) {
         return <NoteDot />;
       }
     }
@@ -507,22 +609,47 @@ const CalendarPage = () => {
 
       <Section>
         <Title>
-          최근 작성한 노트 <DummyBadge>DUMMY</DummyBadge>
+          내 팀 공간
+          <SettingBtn onClick={() => setIsTeamModalOpen(true)} style={{ marginLeft: 'auto', fontSize: '14px', background: '#4A90E2', color: 'white', padding: '4px 12px', borderRadius: '4px' }}>
+            + 새 팀 만들기
+          </SettingBtn>
+        </Title>
+        {teams.length > 0 ? teams.map((team) => (
+          <TeamItem key={team.id} onClick={() => navigate(`/team/${team.id}`)}>
+            <NoteItemTitle>{team.name || '팀 이름 없음'}</NoteItemTitle>
+            <NoteItemMeta>멤버 {team.members ? team.members.length : 1}명</NoteItemMeta>
+          </TeamItem>
+        )) : (
+            <div style={{ padding: '20px', textAlign: 'center', color: '#999' }}>
+                가입된 팀이 없습니다.
+            </div>
+        )}
+      </Section>
+
+      <Section>
+        <Title>
+          최근 작성한 노트
           <MoreLink onClick={() => navigate('/notes')}>
             더보기 <FaChevronRight size={12} />
           </MoreLink>
         </Title>
-        {recentNotes.map((note) => (
-          <NoteItem key={note.id} onClick={() => navigate('/notes')}>
+        {recentNotes.length > 0 ? recentNotes.map((note) => (
+          <NoteItem key={note.id} onClick={() => navigate(`/note/${note.id}`)}>
             <div>
-              <NoteItemTitle>{note.title}</NoteItemTitle>
+              <NoteItemTitle>{note.title || '제목 없음'}</NoteItemTitle>
               <NoteItemMeta>
-                {note.date} | {note.tag}
+                {note.date || '날짜 없음'} | {note.category || '미분류'}
               </NoteItemMeta>
             </div>
-            <NoteItemTime>{note.time}</NoteItemTime>
+            <NoteItemTime>
+                {note.updatedAt ? new Date(note.updatedAt).toLocaleDateString() : ''}
+            </NoteItemTime>
           </NoteItem>
-        ))}
+        )) : (
+            <div style={{ padding: '20px', textAlign: 'center', color: '#999' }}>
+                작성된 노트가 없습니다.
+            </div>
+        )}
       </Section>
 
       <FloatingButton onClick={() => handleDateClick(new Date())}>
@@ -532,7 +659,10 @@ const CalendarPage = () => {
       {isModalOpen && (
         <CreateNoteModal 
           onClose={() => setIsModalOpen(false)} 
-          onConfirm={handleCreateNote} 
+          onConfirm={handleCreateNote}
+          dayNotes={dayNotes} // 기존 노트 목록 전달
+          onSelectNote={handleNoteClick} // 기존 노트 선택 핸들러
+          onDeleteNote={handleDeleteNote} // 삭제 핸들러 전달
         />
       )}
 
@@ -585,6 +715,28 @@ const CalendarPage = () => {
             </ModalContent>
         </ModalOverlay>
       )}
+
+      {/* 팀 생성 모달 */}
+      {isTeamModalOpen && (
+        <ModalOverlay onClick={() => setIsTeamModalOpen(false)}>
+            <ModalContent onClick={e => e.stopPropagation()}>
+                <ModalTitle>새 팀 만들기</ModalTitle>
+                <Input 
+                    placeholder="팀 이름 (예: 캡스톤 디자인 A조)" 
+                    value={teamNameInput} 
+                    onChange={e => setTeamNameInput(e.target.value)} 
+                />
+                <Button $primary onClick={handleCreateTeam}>생성하기</Button>
+            </ModalContent>
+        </ModalOverlay>
+      )}
+
+      <AlertModal 
+        isOpen={alertState.isOpen}
+        onClose={() => setAlertState({ ...alertState, isOpen: false })}
+        title={alertState.title}
+        message={alertState.message}
+      />
 
     </PageContainer>
   );
