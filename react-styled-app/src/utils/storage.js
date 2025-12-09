@@ -475,6 +475,40 @@ export const createTeamDoc = async (teamId, title) => {
     });
 };
 
+// 팀 참가하기 (초대 코드로 가입)
+export const joinTeam = async (teamId) => {
+    const uid = getCurrentUserId();
+    if (!uid) throw new Error("로그인이 필요합니다.");
+
+    try {
+        const teamRef = doc(db, "teams", teamId);
+        const teamDoc = await getDoc(teamRef);
+        
+        if (!teamDoc.exists()) {
+            throw new Error("존재하지 않는 팀입니다.");
+        }
+
+        const teamData = teamDoc.data();
+        const currentMembers = teamData.members || [];
+        
+        // 이미 멤버인지 확인
+        if (currentMembers.includes(uid)) {
+            throw new Error("이미 이 팀의 멤버입니다.");
+        }
+
+        // 멤버 추가
+        await updateDoc(teamRef, {
+            members: [...currentMembers, uid],
+            updatedAt: new Date().toISOString()
+        });
+
+        return { success: true, teamName: teamData.name };
+    } catch (e) {
+        console.error("팀 참가 실패:", e);
+        throw e;
+    }
+};
+
 // 7. 팀 문서 CRUD
 
 // 팀 문서 로드

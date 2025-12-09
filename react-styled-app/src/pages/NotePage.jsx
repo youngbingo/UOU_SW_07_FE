@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import styled from 'styled-components';
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { FaSave, FaArrowLeft, FaBold, FaItalic, FaUnderline, FaPalette, FaListUl, FaMinus, FaSmile, FaPen, FaEraser, FaTrash, FaHighlighter, FaUndo, FaRedo, FaShapes, FaHandPaper, FaImage, FaFilePdf, FaSquare, FaCircle, FaPlay, FaSyncAlt } from 'react-icons/fa';
+import { FaSave, FaArrowLeft, FaBold, FaItalic, FaUnderline, FaPalette, FaListUl, FaMinus, FaSmile, FaPen, FaEraser, FaTrash, FaHighlighter, FaUndo, FaRedo, FaShapes, FaHandPaper, FaImage, FaFilePdf, FaSquare, FaCircle, FaPlay, FaSyncAlt, FaGoogle } from 'react-icons/fa';
 import EmojiPicker from 'emoji-picker-react';
 import { Stage, Layer, Line, Circle, Rect, Image as KonvaImage, Transformer, RegularPolygon } from 'react-konva';
 import useImage from 'use-image';
@@ -249,21 +249,24 @@ const ContentEditable = styled.div`
   }
 `;
 
-// 이미지 컨트롤 버튼 그룹
+// 이미지 컨트롤 버튼 그룹 - DrawingLayer 내부에서 절대 위치
 const ImageControls = styled.div`
-  position: absolute;
-  top: ${({ y }) => y - 50}px;
-  left: ${({ x }) => x}px;
+  position: fixed;
+  top: ${({ y }) => y + 200}px;
+  left: ${({ x }) => x + 200}px;
   display: flex;
   gap: 8px;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.8);
   padding: 8px;
   border-radius: 8px;
-  z-index: 1000;
+  z-index: 10000;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  pointer-events: auto;
 `;
 
 const ImageControlBtn = styled.button`
-  background: white;
+  background: ${({ $danger }) => $danger ? '#e74c3c' : 'white'};
+  color: ${({ $danger }) => $danger ? 'white' : '#333'};
   border: none;
   border-radius: 4px;
   padding: 8px 12px;
@@ -272,12 +275,17 @@ const ImageControlBtn = styled.button`
   align-items: center;
   gap: 4px;
   font-size: 12px;
-  color: ${({ $danger }) => $danger ? '#e74c3c' : '#333'};
+  font-weight: 500;
   transition: all 0.2s;
+  white-space: nowrap;
 
   &:hover {
-    background: ${({ $danger }) => $danger ? '#e74c3c' : '#f0f0f0'};
-    color: ${({ $danger }) => $danger ? 'white' : '#333'};
+    transform: scale(1.05);
+    background: ${({ $danger }) => $danger ? '#c0392b' : '#f0f0f0'};
+  }
+
+  &:active {
+    transform: scale(0.95);
   }
 
   svg {
@@ -957,7 +965,8 @@ const NotePage = () => {
               setAlertState({
                 isOpen: true,
                 title: '성공',
-                message: '저장되었습니다!'
+                message: '저장되었습니다!',
+                onConfirm: () => navigate(-1) // 리다이렉션 추가
               });
       } catch (e) {
           console.error(e);
@@ -1060,6 +1069,7 @@ const NotePage = () => {
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
+      console.log('📸 이미지 업로드 시작:', file.name, file.size, 'bytes');
       const reader = new FileReader();
       reader.onload = (e) => {
         if (settings.method === 'handwriting') {
@@ -1075,9 +1085,19 @@ const NotePage = () => {
                     height: 200 * (imgObj.height / imgObj.width),
                     rotation: 0,
                 };
+                console.log('✅ 이미지 객체 생성:', newImage.id, `${newImage.width}x${newImage.height.toFixed(0)}`);
                 const newImages = [...images, newImage];
                 setImages(newImages);
                 saveHistory(lines, newImages, shapes);
+                console.log('📝 총 이미지 개수:', newImages.length);
+            };
+            imgObj.onerror = (err) => {
+                console.error('❌ 이미지 로드 실패:', err);
+                setAlertState({
+                    isOpen: true,
+                    title: '오류',
+                    message: '이미지를 불러올 수 없습니다.'
+                });
             };
         } else {
             // 텍스트 모드: 에디터에 이미지 삽입
@@ -1090,7 +1110,16 @@ const NotePage = () => {
                 lastImg.style.maxWidth = '100%';
                 lastImg.style.borderRadius = '8px';
             }
+            console.log('✅ 텍스트 모드에 이미지 삽입됨');
         }
+      };
+      reader.onerror = (err) => {
+        console.error('❌ 파일 읽기 실패:', err);
+        setAlertState({
+            isOpen: true,
+            title: '오류',
+            message: '파일을 읽을 수 없습니다.'
+        });
       };
       reader.readAsDataURL(file);
     }
@@ -1105,10 +1134,13 @@ const NotePage = () => {
     if (imageIndex === -1) return;
     
     const newImages = [...images];
+    const currentRotation = newImages[imageIndex].rotation || 0;
+    const newRotation = (currentRotation + 90) % 360;
     newImages[imageIndex] = {
       ...newImages[imageIndex],
-      rotation: ((newImages[imageIndex].rotation || 0) + 90) % 360
+      rotation: newRotation
     };
+    console.log('🔄 이미지 회전:', selectedImageId, `${currentRotation}° → ${newRotation}°`);
     setImages(newImages);
     saveHistory(lines, newImages, shapes);
   };
@@ -1116,10 +1148,38 @@ const NotePage = () => {
   // 이미지 삭제 핸들러
   const handleDeleteImage = () => {
     if (!selectedImageId) return;
+    console.log('🗑️ 이미지 삭제:', selectedImageId);
     const newImages = images.filter(img => img.id !== selectedImageId);
     setImages(newImages);
     setSelectedImageId(null);
     saveHistory(lines, newImages, shapes);
+    console.log('📝 남은 이미지 개수:', newImages.length);
+  };
+
+  // 구글 캘린더에 노트 추가
+  const addToGoogleCalendar = () => {
+    if (!noteDate) {
+      setAlertState({
+        isOpen: true,
+        title: '알림',
+        message: '날짜 정보가 없는 노트입니다.'
+      });
+      return;
+    }
+
+    const title = encodeURIComponent(noteTitle || '노트');
+    const dateStr = noteDate.replace(/-/g, '');
+    const details = encodeURIComponent(`카테고리: ${category}\n\n노트 내용을 확인하세요.`);
+    
+    const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${dateStr}/${dateStr}&details=${details}`;
+    
+    window.open(url, '_blank');
+    
+    setAlertState({
+      isOpen: true,
+      title: '구글 캘린더 📅',
+      message: '구글 캘린더 추가 페이지가 열렸습니다!\n날짜와 내용을 확인하고 저장하세요.'
+    });
   };
 
   const onDocumentLoadSuccess = ({ numPages }) => {
@@ -1257,6 +1317,9 @@ const NotePage = () => {
             </CategorySelect>
             <ActionButton onClick={handleDelete} title="삭제">
                 <FaTrash />
+            </ActionButton>
+            <ActionButton onClick={addToGoogleCalendar} title="구글 캘린더에 추가" style={{ background: '#4285F4', color: 'white' }}>
+                <FaGoogle />
             </ActionButton>
             <ActionButton $primary onClick={handleSave}>
             <FaSave /> 저장

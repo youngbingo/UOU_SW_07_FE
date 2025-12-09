@@ -188,11 +188,15 @@ const TeamSpacePage = () => {
   };
 
   const copyInviteLink = () => {
-    navigator.clipboard.writeText(teamId);
+    // 초대 링크 생성 (앱 URL + 팀 ID)
+    const inviteLink = `${window.location.origin}/join-team/${teamId}`;
+    const inviteMessage = `[D.note 팀 초대]\n${teamData.name}에 초대되었습니다!\n\n초대 코드: ${teamId}\n초대 링크: ${inviteLink}\n\n링크를 클릭하거나 앱에서 "팀 참가하기"에 코드를 입력하세요.`;
+    
+    navigator.clipboard.writeText(inviteMessage);
     setAlertState({
         isOpen: true,
-        title: "초대 코드 복사 완료",
-        message: `팀 코드(${teamId})가 복사되었습니다! 팀원에게 공유하세요.`
+        title: "초대 정보 복사 완료 ✅",
+        message: `초대 링크와 코드가 복사되었습니다!\n카카오톡이나 문자로 팀원에게 공유하세요.`
     });
   };
 

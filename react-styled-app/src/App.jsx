@@ -8,6 +8,7 @@ import CalendarPage from './pages/CalendarPage';
 import NotePage from './pages/NotePage';
 import NoteListPage from './pages/NoteListPage';
 import TeamSpacePage from './pages/TeamSpacePage';
+import JoinTeamPage from './pages/JoinTeamPage';
 import SignUpPage from './pages/SignUpPage';
 import { AuthProvider } from './context/AuthContext';
 
@@ -41,6 +42,7 @@ function App() {
                 {/* 기존 date 파라미터를 id로 변경하여 다중 메모 지원 */}
                 <Route path="note/:id" element={<NotePage />} />
                 <Route path="team/:teamId" element={<TeamSpacePage />} />
+                <Route path="join-team/:teamId" element={<JoinTeamPage />} />
                 <Route path="signup" element={<SignUpPage />} />
                 </Route>
             </Routes>

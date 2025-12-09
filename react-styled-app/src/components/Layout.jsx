@@ -6,8 +6,9 @@ import { ThemeContext } from '../App';
 import { useAuth } from '../context/AuthContext';
 import LoginModal from './LoginModal';
 import AlertModal from './AlertModal';
+import PromptModal from './PromptModal';
 import SyncStatusIndicator from './SyncStatusIndicator'; // 추가
-import { getUserTeams } from '../utils/storage';
+import { getUserTeams, joinTeam } from '../utils/storage';
 
 const Container = styled.div`
   display: flex;
@@ -201,6 +202,7 @@ const Layout = () => {
   const [subjects, setSubjects] = useState([]);
   const [myTeams, setMyTeams] = useState([]);
   const [alertState, setAlertState] = useState({ isOpen: false, title: '', message: '' });
+  const [promptState, setPromptState] = useState({ isOpen: false, title: '', placeholder: '', onConfirm: () => {} });
 
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
   const toggleSearch = () => setIsSearchOpen(!isSearchOpen);
@@ -362,6 +364,9 @@ const Layout = () => {
             <SubMenuItem onClick={() => { navigate('/'); toggleSidebar(); }} style={{ color: '#4A90E2', fontWeight: 'bold' }}>
                 <FaPlus size={10} style={{marginRight: '4px'}}/> 새 팀 만들기 (홈)
             </SubMenuItem>
+            <SubMenuItem onClick={handleJoinTeam} style={{ color: '#2ECC71', fontWeight: 'bold' }}>
+                <FaUsers size={10} style={{marginRight: '4px'}}/> 팀 참가하기
+            </SubMenuItem>
           </SubMenu>
 
         </SidebarMenu>
@@ -390,6 +395,21 @@ const Layout = () => {
         <Outlet />
         <SyncStatusIndicator />
       </Main>
+
+      <AlertModal 
+        isOpen={alertState.isOpen}
+        onClose={() => setAlertState({ ...alertState, isOpen: false })}
+        title={alertState.title}
+        message={alertState.message}
+      />
+      
+      <PromptModal
+        isOpen={promptState.isOpen}
+        onClose={() => setPromptState({ ...promptState, isOpen: false })}
+        onConfirm={promptState.onConfirm}
+        title={promptState.title}
+        placeholder={promptState.placeholder}
+      />
     </Container>
   );
 };

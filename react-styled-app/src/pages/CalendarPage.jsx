@@ -4,7 +4,7 @@ import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
-import { FaPlus, FaList, FaCalendarAlt, FaChevronRight, FaCog, FaTimes } from 'react-icons/fa';
+import { FaPlus, FaList, FaCalendarAlt, FaChevronRight, FaCog, FaTimes, FaGoogle } from 'react-icons/fa';
 import CreateNoteModal from '../components/CreateNoteModal';
 import AlertModal from '../components/AlertModal';
 import { loadDayNotesList, saveNote, loadRecentNotes, deleteNote, getUserTeams, createTeam } from '../utils/storage'; // loadRecentNotes, 팀 관련 함수 추가
@@ -355,6 +355,7 @@ const CalendarPage = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState(null);
   const [dayNotes, setDayNotes] = useState([]); // 해당 날짜의 노트 목록
+  const [calendarKey, setCalendarKey] = useState(0); // 캘린더 강제 리렌더링용
 
   const [timetableData, setTimetableData] = useState([]);
   const [isTimeSettingOpen, setIsTimeSettingOpen] = useState(false);
@@ -476,6 +477,8 @@ const CalendarPage = () => {
     await deleteNote(noteId, selectedDate);
     const notes = await fetchDayNotes(selectedDate);
     setDayNotes(notes);
+    // 캘린더 강제 리렌더링으로 점 표시 업데이트
+    setCalendarKey(prev => prev + 1);
   };
 
   const saveTimeRange = (newRange) => {
@@ -527,6 +530,51 @@ const CalendarPage = () => {
     setClassModalOpen(false);
   };
 
+  // 구글 캘린더로 시간표 내보내기
+  const exportToGoogleCalendar = () => {
+    if (timetableData.length === 0) {
+      setAlertState({
+        isOpen: true,
+        title: '알림',
+        message: '내보낼 시간표가 없습니다.'
+      });
+      return;
+    }
+
+    // 월요일 기준으로 시작 날짜 계산 (이번 주 월요일)
+    const today = new Date();
+    const dayOfWeek = today.getDay(); // 0(일) ~ 6(토)
+    const monday = new Date(today);
+    monday.setDate(today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1));
+
+    const events = timetableData.map(item => {
+      // day: 1(월) ~ 5(금)
+      const eventDate = new Date(monday);
+      eventDate.setDate(monday.getDate() + item.day - 1);
+      
+      const dateStr = eventDate.toISOString().split('T')[0].replace(/-/g, '');
+      const startTime = `T${item.time.toString().padStart(2, '0')}0000`;
+      const endTime = `T${(item.time + 1).toString().padStart(2, '0')}0000`;
+
+      const title = encodeURIComponent(item.name);
+      const location = encodeURIComponent(item.room || '');
+      const description = encodeURIComponent(`시간표: ${item.name}`);
+
+      return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${dateStr}${startTime}/${dateStr}${endTime}&location=${location}&details=${description}&recur=RRULE:FREQ=WEEKLY;COUNT=16`;
+    });
+
+    // 첫 번째 이벤트 열기
+    if (events.length > 0) {
+      window.open(events[0], '_blank');
+      
+      setAlertState({
+        isOpen: true,
+        title: '구글 캘린더 내보내기 📅',
+        message: `${timetableData.length}개의 수업 중 첫 번째가 열렸습니다.\n각 수업마다 반복해서 추가해주세요.\n\n💡 팁: 반복 설정이 포함되어 있어 매주 자동으로 추가됩니다!`
+      });
+    }
+  };
+
 
   // 날짜 타일 내용 (메모 있으면 점 표시)
   const tileContent = ({ date, view }) => {
@@ -562,6 +610,7 @@ const CalendarPage = () => {
           <>
             <StyledCalendarWrapper>
               <Calendar 
+                key={calendarKey} // 강제 리렌더링용
                 onChange={onChange} 
                 value={value} 
                 onClickDay={handleDateClick}
@@ -577,9 +626,29 @@ const CalendarPage = () => {
                 <Title style={{ marginBottom: 0 }}>
                 이번 주 시간표
                 </Title>
-                <SettingBtn onClick={() => setIsTimeSettingOpen(true)}>
-                    <FaCog /> 시간 설정
-                </SettingBtn>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    onClick={exportToGoogleCalendar}
+                    style={{
+                      background: '#4285F4',
+                      color: 'white',
+                      border: 'none',
+                      padding: '8px 16px',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    <FaGoogle /> 구글 캘린더로 내보내기
+                  </button>
+                  <SettingBtn onClick={() => setIsTimeSettingOpen(true)}>
+                      <FaCog /> 시간 설정
+                  </SettingBtn>
+                </div>
             </div>
             
             <TimeTableGrid>
