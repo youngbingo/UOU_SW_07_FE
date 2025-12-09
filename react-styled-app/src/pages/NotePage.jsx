@@ -98,6 +98,8 @@ const Toolbar = styled.div`
   border-bottom: 1px solid ${({ theme }) => theme.colors.border};
   flex-wrap: wrap;
   align-items: center;
+  position: relative;
+  z-index: 20; 
 `;
 
 const ToolBtn = styled.button`
@@ -251,9 +253,9 @@ const ContentEditable = styled.div`
 
 // 이미지 컨트롤 버튼 그룹 - DrawingLayer 내부에서 절대 위치
 const ImageControls = styled.div`
-  position: fixed;
-  top: ${({ y }) => y + 200}px;
-  left: ${({ x }) => x + 200}px;
+  position: absolute;
+  top: ${({ y }) => y - 50}px;
+  left: ${({ x }) => x}px;
   display: flex;
   gap: 8px;
   background: rgba(0, 0, 0, 0.8);

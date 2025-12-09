@@ -257,6 +257,32 @@ const Layout = () => {
     }
   };
 
+  const handleJoinTeam = () => {
+    setPromptState({
+      isOpen: true,
+      title: "팀 참가하기",
+      placeholder: "팀 초대 코드를 입력하세요",
+      onConfirm: async (teamId) => {
+        if (!teamId.trim()) return;
+        try {
+          const result = await joinTeam(teamId.trim());
+          showAlert(`${result.teamName} 팀에 참가했습니다!`);
+          
+          // 팀 목록 갱신 및 이동
+          const teams = await getUserTeams();
+          setMyTeams(teams);
+          
+          setTimeout(() => {
+            navigate(`/team/${teamId.trim()}`);
+            toggleSidebar();
+          }, 1000);
+        } catch (e) {
+          showAlert(e.message || "팀 참가에 실패했습니다.");
+        }
+      }
+    });
+  };
+
   const showAlert = (message) => {
     setAlertState({ isOpen: true, title: '알림', message });
   };

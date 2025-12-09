@@ -104,11 +104,7 @@ const JoinTeamPage = () => {
   const [teamName, setTeamName] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
-  useEffect(() => {
-    handleJoinTeam();
-  }, [teamId, currentUser]);
-
-  const handleJoinTeam = async () => {
+  const handleJoinTeam = React.useCallback(async () => {
     if (!teamId) {
       setStatus('error');
       setErrorMessage('유효하지 않은 초대 링크입니다.');
@@ -136,7 +132,11 @@ const JoinTeamPage = () => {
       setStatus('error');
       setErrorMessage(e.message || '팀 참가에 실패했습니다.');
     }
-  };
+  }, [teamId, currentUser, navigate]);
+
+  useEffect(() => {
+    handleJoinTeam();
+  }, [handleJoinTeam]);
 
   const renderContent = () => {
     switch (status) {
